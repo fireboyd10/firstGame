@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Red Flag Rush: a red signal flag and a green check</title>
+  <defs><radialGradient id="bg" cx="39%" cy="20%" r="121%"><stop stop-color="#28172b"/><stop offset="1" stop-color="#130d18"/></radialGradient></defs>
+  <path fill="url(#bg)" d="M0 0H512V512H0z"/>
+  <circle cx="256" cy="256" r="210" fill="#291a30"/>
+  <circle cx="256" cy="256" r="207" fill="#160f1c"/>
+  <polygon points="123,109 130,126 147,133 130,140 123,157 116,140 99,133" fill="#ff7eae"/>
+  <path d="M184 139L184 372" stroke="#fff0d7" stroke-width="18" stroke-linecap="round"/>
+  <polygon points="193,140 284,119 368,145 334,204 356,258 278,231 193,250" fill="#ff4869"/>
+  <polygon points="284,119 368,145 334,204 313,192" fill="#e32d56"/>
+  <path d="M227 173L261 165" stroke="#fff0d7" stroke-width="10" stroke-linecap="round"/>
+  <polygon points="320,294 363,334 320,374 277,334" fill="#49dfa4"/>
+  <path d="M303 334L315 346" stroke="#130d18" stroke-width="9" stroke-linecap="round"/>
+  <path d="M315 346L338 322" stroke="#130d18" stroke-width="9" stroke-linecap="round"/>
+  <path d="M155 395L223 395" stroke="#68445e" stroke-width="6" stroke-linecap="round"/>
+</svg>

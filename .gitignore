@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.qa/
+.npm-cache/
+*.log
+.DS_Store
+# Original local brief; keep it in the workspace, out of the published game.
+/prompt.txt

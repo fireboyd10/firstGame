@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "Red Flag Rush — Swipe the Signs",
+  "short_name": "Flag Rush",
+  "description": "Trust your instincts. Swipe through a fast, playful game of boundaries, respect, and social signs.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#130d18",
+  "theme_color": "#130d18",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
