@@ -64,6 +64,8 @@ async function assetResponse(request) {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  // Room state and private votes always go to the live party server.
+  if (url.pathname.startsWith('/api/')) return;
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || !url.href.startsWith(SCOPE)) return;
   if (event.request.mode === 'navigate') {
     // Keep HTML and its hashed assets on one release, even when online.

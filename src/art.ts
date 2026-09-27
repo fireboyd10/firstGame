@@ -51,11 +51,14 @@ export function heroArt(): string {
 }
 
 export function cardArt(variant: number): string {
+  // Decorative patterns follow the card count, never its answer or category.
+  // Keep these abstract: symbols such as ticks, warning signs, and hearts can
+  // suggest a verdict before the player has read the scenario.
   const shapes = [
-    '<path d="M15 43c21-29 50-29 71 0-21 28-50 28-71 0Z"/><ellipse cx="50" cy="43" rx="11" ry="17"/><path d="m20 16 5 8m25-14v10m30-4-5 8"/>',
-    '<path d="M21 17h56a9 9 0 0 1 9 9v27a9 9 0 0 1-9 9H50L33 76V62H21a9 9 0 0 1-9-9V26a9 9 0 0 1 9-9Z"/><path d="m35 38 9 10 20-22"/>',
-    '<path d="M50 72 21 46c-22-22 9-49 29-25 20-24 51 3 29 25L50 72Z"/><path d="m50 26-7 16 14 3-7 17"/>',
-    '<path d="m50 9 40 64H10L50 9Z"/><path d="M50 31v19m0 8v3"/>',
+    '<path d="M12 29c13-18 25 18 38 0s25 18 38 0M12 43c13-18 25 18 38 0s25 18 38 0M12 57c13-18 25 18 38 0s25 18 38 0"/>',
+    '<rect x="18" y="17" width="42" height="42" rx="13"/><rect x="40" y="29" width="42" height="42" rx="13"/>',
+    '<path d="M22 67V39a28 28 0 0 1 56 0v28M34 67V39a16 16 0 0 1 32 0v28M46 67V39a4 4 0 0 1 8 0v28"/>',
+    '<path d="M16 25h43a12 12 0 0 1 0 24H41a12 12 0 0 0 0 24h43M84 13H41a12 12 0 0 0 0 24h18a12 12 0 0 1 0 24H16"/>',
   ];
   return `<svg class="card-art" viewBox="0 0 100 86" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes[variant % shapes.length]}</svg>`;
 }

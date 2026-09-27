@@ -1,12 +1,14 @@
 import './styles.css';
 import { GameEngine } from './game/engine';
 import type { Answer } from './game/types';
-import { loadPreferences, savePreferences, loadHighScore, saveHighScore } from './game/storage';
-import { multiplierForStreak } from './game/scoring';
+import { loadPreferences, savePreferences } from './game/storage';
+import { partyVerdict, tastePercent } from './multiplayer/personality';
 import { Sound, vibrate } from './audio/sound';
 import { heroArt, cardArt, icon } from './art';
 import { bindSwipe } from './swipe';
 import { setupPwa } from './pwa';
+import { isNativePlatform, setupNativeLifecycle, minimizeNativeApp } from './platform/native';
+import { createPartyUi } from './multiplayer/ui';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
@@ -25,28 +27,28 @@ app.innerHTML = `
       <section id="home" class="home view" aria-labelledby="home-title">
         <div class="home-grid">
           <div class="home-intro">
-            <p class="eyebrow"><span class="live-dot"></span> A GAME OF GOOD INSTINCTS</p>
+            <p class="eyebrow"><span class="live-dot"></span> BRING YOUR FRIENDS. EXPLAIN YOUR TASTE.</p>
             <h1 id="home-title">RED FLAG<span>RUSH<span class="title-spark">✳</span></span></h1>
             <p class="subtitle">SWIPE THE SIGNS</p>
           </div>
-          <div class="home-art">${heroArt()}<span class="art-caption">THE SIGNS ARE THERE. CAN YOU SPOT THEM?</span></div>
+          <div class="home-art">${heroArt()}<span class="art-caption">BE HONEST. WOULD YOU STILL GO THERE?</span></div>
           <div class="home-actions">
-            <p class="home-description">A little charm. A little chaos.<br>Trust your gut before the clock runs out.</p>
-            <div class="rules-strip"><span>${icon('heart')} 3 lives</span><i></i><span>5 seconds</span><i></i><span>Your call.</span></div>
-            <button class="primary-button start-button" data-action="start">LET’S PLAY ${icon('arrow')}</button>
-            <p class="home-best">${icon('trophy')} PERSONAL BEST <strong id="home-best">0</strong></p>
+            <p class="home-description">Red flag, but I like it.<br>Your next group chat argument starts here.</p>
+            <div class="rules-strip"><span>2 to 8 friends</span><i></i><span>Same Wi-Fi</span><i></i><span>Your call.</span></div>
+            <button class="primary-button" data-action="party-open">PLAY WITH FRIENDS ${icon('arrow')}</button>
+            <button class="secondary-button start-button" data-action="start">FIND MY TYPE</button>
+            <p class="home-best">10 choices. One very personal reveal.</p>
           </div>
         </div>
-        <div class="home-bottom"><span>READ THE ROOM.</span><span>TRUST YOUR INSTINCTS.</span><span>CHASE THE STREAK.</span></div>
+        <div class="home-bottom"><span>READ THE ROOM.</span><span>TRUST YOUR INSTINCTS.</span><span>COMPARE YOUR TASTE.</span></div>
       </section>
       <section id="game" class="game view" aria-label="Current run" hidden>
         <div class="game-hud">
-          <div><span class="tiny-label">SCORE</span><strong id="score">0</strong></div>
-          <div class="run-label"><span class="tiny-label">READ THE ROOM</span><span id="round-label">CARD 01</span></div>
-          <div class="lives" id="lives" role="img" aria-label="3 lives remaining"></div>
+          <div><span class="tiny-label">YOUR PICKS</span><strong id="solo-progress">0 / 10</strong></div>
+          <div class="run-label"><span class="tiny-label">YOUR GUT. YOUR CALL.</span><span id="round-label">SCENARIO 01</span></div>
         </div>
-        <div class="timer-label"><span id="pace-label">WARMING UP</span><span id="timer-number" aria-hidden="true">5.0s</span></div>
-        <div class="timer-track" id="timer" role="progressbar" aria-label="Time remaining" aria-valuemin="0" aria-valuemax="5" aria-valuenow="5"><div id="timer-fill"></div></div>
+        <div class="timer-label"><span id="pace-label">WARMING UP</span><span id="timer-number" aria-hidden="true">30.0s</span></div>
+        <div class="timer-track" id="timer" role="progressbar" aria-label="Time remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="30"><div id="timer-fill"></div></div>
         <div class="card-stage">
           <article id="scenario-card" class="scenario-card" aria-label="Scenario. Swipe left for red or right for green.">
             <div class="card-top"><span id="category">BOUNDARIES</span><span id="difficulty">01 / 03</span></div>
@@ -58,16 +60,17 @@ app.innerHTML = `
         </div>
         <div class="feedback" id="feedback" aria-live="polite" aria-atomic="true"><strong>Your gut has something to say.</strong><p>Swipe the card or choose below.</p></div>
         <div class="choices"><button class="choice choice-red" data-action="red" aria-label="Red flag">${icon('flag')}<span>RED FLAG<small>← SWIPE LEFT</small></span></button><button class="choice choice-green" data-action="green" aria-label="Green flag"><span>GREEN FLAG<small>SWIPE RIGHT →</small></span>${icon('flag')}</button></div>
-        <div class="streak-bar"><span>${icon('spark')} <strong id="streak">0</strong> STREAK</span><span id="multiplier">×1 MULTIPLIER</span></div>
+        <div class="streak-bar"><span>🚩 <strong id="red-picks">0</strong> RED PICKS</span><span>💚 <strong id="green-picks">0</strong> GREEN PICKS</span></div>
       </section>
       <section id="results" class="results view" aria-labelledby="results-title" hidden>
         <div class="result-burst" aria-hidden="true">${icon('spark')}${icon('heart')}${icon('spark')}</div>
-        <p class="eyebrow" id="result-eyebrow">THAT’S A WRAP</p><h2 id="results-title">Good instincts.<br><em>Next-level potential.</em></h2>
-        <div class="score-medallion"><span class="tiny-label">YOUR SCORE</span><strong id="final-score">0</strong><span id="record-label">KEEP READING THE SIGNS</span></div>
-        <div class="result-stats"><div><strong id="best-streak">0</strong><span>BEST STREAK</span></div><div><strong id="accuracy">0%</strong><span>ACCURACY</span></div><div><strong id="high-score">0</strong><span>HIGH SCORE</span></div></div>
+        <p class="eyebrow" id="result-eyebrow">YOUR TASTE HAS ENTERED THE CHAT</p><h2 id="results-title">Your verdict</h2>
+        <div class="score-medallion"><span class="tiny-label">TASTE FOR CHAOS</span><strong id="chaos-percent">0%</strong><span id="taste-detail"></span></div>
+        <div class="result-stats solo-stats"><div><strong id="green-percent">0%</strong><span>GREEN FLAG APPRECIATION</span></div><div><strong id="picks-made">10</strong><span>YOUR PICKS</span></div></div>
         <p class="result-message" id="result-message"></p>
+        <p class="verdict-note">A little game-night gossip about your taste. Context is still allowed.</p>
         <button class="primary-button" data-action="replay">ONE MORE RUN ${icon('restart')}</button>
-        <button class="secondary-button" data-action="share">SHARE MY SCORE ${icon('share')}</button>
+        <button class="secondary-button" data-action="share">SHARE MY VERDICT ${icon('share')}</button>
         <div id="share-fallback" hidden><label for="share-text">Copy your result:</label><textarea id="share-text" readonly rows="3"></textarea></div>
         <button class="text-button back-home" data-action="home">Back to the start</button>
       </section>
@@ -83,16 +86,21 @@ function el<T extends HTMLElement = HTMLElement>(selector: string): T { return a
 const engine = new GameEngine();
 const sound = new Sound();
 let preferences = loadPreferences();
-let highScore = loadHighScore();
-let previousBest = highScore;
 let screen: 'home' | 'game' | 'results' = 'home';
 let feedbackRemaining = 0;
 let lastFrame = performance.now();
-let modalKind: 'tutorial' | 'pause' | null = null;
+let modalKind: 'tutorial' | 'pause' | 'party' | null = null;
 let update: (() => void) | null = null;
 let toastTimeout = 0;
+let appActive = true;
 const modal = el<HTMLDialogElement>('#modal');
 const card = el('#scenario-card');
+const party = createPartyUi(el('#modal-content'), {
+  onOpen() { modalKind = 'party'; if (!modal.open) modal.showModal(); },
+  onClose() { closeModal(); },
+  sound,
+  onMute: toggleSound,
+});
 const resetSwipe = bindSwipe(card, () => screen === 'game' && engine.state.phase === 'playing' && !modal.open, choose);
 
 function setScreen(next: typeof screen): void {
@@ -102,7 +110,6 @@ function setScreen(next: typeof screen): void {
   el('[data-action="restart"]').hidden = next !== 'game';
   el('[data-action="help"]').hidden = next === 'game';
   el('#update-banner').hidden = !update || next === 'game';
-  el('#home-best').textContent = highScore.toLocaleString();
 }
 
 function announce(message: string): void { el('#announcement').textContent = message; }
@@ -119,34 +126,40 @@ function refreshSound(): void {
   button.setAttribute('aria-label', preferences.muted ? 'Unmute sound' : 'Mute sound');
   button.setAttribute('aria-pressed', String(preferences.muted));
 }
-function closeModal(): void { modal.close(); modalKind = null; }
+function toggleSound(): void {
+  preferences = savePreferences({ muted: !preferences.muted });
+  refreshSound(); sound.unlock();
+}
+function closeModal(): void { if (modalKind === 'party') party.hide(); modal.close(); modalKind = null; }
 function showTutorial(): void {
   if (screen === 'game') return;
   modalKind = 'tutorial';
-  el('#modal-content').innerHTML = `<div class="modal-heading"><span class="eyebrow">THE 20-SECOND BRIEF</span><button class="icon-button" data-action="close-tutorial" aria-label="Close tutorial">${icon('cross')}</button></div><h2 id="modal-title">Read it.<br>Feel it. <em>Flag it.</em></h2><p class="modal-description">Dating, friendship, and everything in between. Spot the behavior. Make your call.</p><div class="tutorial-choices"><div>${icon('flag')}<strong>RED FLAG</strong><span>Swipe left / ←</span><small>Disrespect, pressure,<br>or control.</small></div><div>${icon('flag')}<strong>GREEN FLAG</strong><span>Swipe right / →</span><small>Respect, honesty,<br>and healthy boundaries.</small></div></div><ul class="tutorial-rules"><li>${icon('heart')} <span><strong>Three lives. Make them count.</strong> A wrong answer or timeout costs one.</span></li><li>${icon('spark')} <span><strong>Find your flow.</strong> A streak of 5 boosts your multiplier. The pace picks up as you go.</span></li><li>${icon('pause')} <span><strong>Take a breath.</strong> Pause whenever you need. Buttons work just like swipes.</span></li></ul><button class="primary-button" data-action="begin">GOT IT. LET’S GO. ${icon('arrow')}</button><p class="modal-hint">Keyboard: ← → to choose · Esc to pause</p>`;
+  el('#modal-content').innerHTML = `<div class="modal-heading"><span class="eyebrow">A LITTLE SELF DISCOVERY</span><button class="icon-button" data-action="close-tutorial" aria-label="Close tutorial">${icon('cross')}</button></div><h2 id="modal-title">Your gut.<br><em>Your call.</em></h2><p class="modal-description">Read the situation and pick a flag. No hints from us.</p><div class="tutorial-choices"><div>${icon('flag')}<strong>RED FLAG</strong><span>Swipe left / ←</span></div><div>${icon('flag')}<strong>GREEN FLAG</strong><span>Swipe right / →</span></div></div><p class="modal-description">Ten scenarios. Pick what you would actually go for. Your verdict is waiting at the end.</p><button class="primary-button" data-action="begin">LET'S PLAY ${icon('arrow')}</button><p class="modal-hint">Keyboard: ← → to choose · Esc to pause</p>`;
   if (!modal.open) modal.showModal();
 }
+
 function pause(): void {
   if (screen !== 'game' || modal.open) return;
   advanceClock(performance.now());
   if (screen !== 'game') return;
   engine.pause();
+  sound.stop();
   resetSwipe();
   modalKind = 'pause';
   el('#modal-content').innerHTML = `<p class="eyebrow">TAKE YOUR TIME</p><h2 id="modal-title">A little<br><em>breathing room.</em></h2><p class="modal-description">Your timer is paused. The signs can wait.</p><button class="primary-button" data-action="resume">BACK TO IT ${icon('arrow')}</button><button class="secondary-button" data-action="restart">START A FRESH RUN ${icon('restart')}</button><button class="setting-button" data-action="haptics" aria-pressed="${preferences.haptics}"><span>Vibration <small>On supported devices</small></span><strong>${preferences.haptics ? 'ON' : 'OFF'}</strong></button><button class="text-button back-home" data-action="home">End run & return home</button>`;
   modal.showModal();
 }
 function resume(): void {
-  if (document.hidden) return;
+  if (document.hidden || !appActive) return;
   closeModal();
   lastFrame = performance.now();
   engine.resume();
 }
 function start(): void {
-  if (document.hidden) return;
+  if (document.hidden || !appActive) return;
   closeModal();
   preferences = savePreferences({ tutorialSeen: true });
-  previousBest = highScore;
+  sound.stop();
   sound.unlock();
   resetSwipe();
   engine.start();
@@ -158,25 +171,24 @@ function start(): void {
 }
 function renderHud(): void {
   const state = engine.state;
-  el('#score').textContent = state.score.toLocaleString();
-  el('#lives').innerHTML = Array.from({ length: 3 }, (_, i) => icon('heart', i < state.lives ? 'life-full' : 'life-lost')).join('');
-  el('#lives').setAttribute('aria-label', `${state.lives} lives remaining`);
-  el('#round-label').textContent = `CARD ${String(state.answered + (state.phase === 'playing' ? 1 : 0)).padStart(2, '0')}`;
-  el('#streak').textContent = String(state.streak);
-  el('#multiplier').textContent = `×${multiplierForStreak(state.streak)} MULTIPLIER`;
-  el('.streak-bar').classList.toggle('on-fire', state.streak >= 5);
+  el('#solo-progress').textContent = `${state.answered} / ${state.totalRounds}`;
+  el('#round-label').textContent = `SCENARIO ${Math.min(state.totalRounds, state.answered + (state.phase === 'playing' ? 1 : 0))}`;
+  el('#red-picks').textContent = String(state.redPicks);
+  el('#green-picks').textContent = String(state.greenPicks);
   renderTimer();
 }
 let displayedTenth = -1;
 function renderTimer(): void {
   const { remainingMs, durationMs } = engine.state;
+  if (engine.state.phase === 'playing') sound.countdown(`solo:${engine.state.answered}`, remainingMs);
+  else sound.stopCountdown();
   const ratio = durationMs > 0 ? remainingMs / durationMs : 0;
   el('#timer-fill').style.transform = `scaleX(${Math.max(0, ratio)})`;
   el('#timer').classList.toggle('timer-urgent', ratio < .25);
   const tenth = Math.ceil(remainingMs / 100);
   if (tenth !== displayedTenth) {
     displayedTenth = tenth;
-    el('#timer-number').textContent = `${(tenth / 10).toFixed(1)}s`;
+    el('#timer-number').textContent = tenth ? `${(tenth / 10).toFixed(1)}s` : 'Take your time';
     el('#timer').setAttribute('aria-valuenow', String(tenth / 10));
   }
 }
@@ -184,17 +196,17 @@ function renderCard(): void {
   const state = engine.state;
   const scenario = state.scenario!;
   resetSwipe();
-  card.classList.remove('is-correct', 'is-incorrect', 'card-enter');
+  card.classList.remove('card-picked', 'card-enter');
   void card.offsetWidth;
   card.classList.add('card-enter');
   card.classList.toggle('long-text', scenario.text.length > 110);
   card.dataset.scenarioId = scenario.id;
-  el('#category').textContent = scenario.category;
-  el('#difficulty').textContent = `${'●'.repeat(scenario.difficulty)}${'○'.repeat(3 - scenario.difficulty)}`;
-  el('#difficulty').setAttribute('aria-label', `Difficulty ${scenario.difficulty} of 3`);
+  el('#category').textContent = 'YOUR CALL';
+  el('#difficulty').textContent = `${state.answered + 1} / ${state.totalRounds}`;
+  el('#difficulty').setAttribute('aria-label', `Scenario ${state.answered + 1} of ${state.totalRounds}`);
   el('#scenario-text').textContent = scenario.text;
   el('#card-art').innerHTML = cardArt(state.answered);
-  el('#pace-label').textContent = state.answered < 6 ? 'WARMING UP' : state.answered < 14 ? 'FINDING YOUR FLOW' : 'TRUST THAT GUT';
+  el('#pace-label').textContent = 'WHAT WOULD YOU GO FOR?';
   el('#timer').setAttribute('aria-valuemax', String(state.durationMs / 1000));
   el('#feedback').className = 'feedback';
   el('#feedback').innerHTML = '<strong>Your gut has something to say.</strong><p>Swipe the card or choose below.</p>';
@@ -203,54 +215,48 @@ function renderCard(): void {
   announce(`Card ${state.answered + 1}. ${scenario.text}`);
 }
 function showFeedback(): void {
-  const state = engine.state;
-  const feedback = state.feedback!;
-  resetSwipe();
-  feedbackRemaining = 2200;
+  resetSwipe(); sound.stopCountdown();
+  feedbackRemaining = 650;
   card.classList.remove('card-enter');
-  card.classList.add(feedback.correct ? 'is-correct' : 'is-incorrect');
+  card.classList.add('card-picked');
   for (const button of app.querySelectorAll<HTMLButtonElement>('.choice')) button.disabled = true;
-  const title = feedback.correct ? `Good call. +${feedback.points}` : feedback.answer === null ? 'Time’s up.' : 'A sign worth noticing.';
-  el('#feedback').className = `feedback ${feedback.correct ? 'feedback-correct' : 'feedback-incorrect'}`;
-  el('#feedback').innerHTML = `<strong>${icon(feedback.correct ? 'check' : 'cross')} ${title}<span>${state.scenario!.answer.toUpperCase()} FLAG</span></strong><p></p>`;
-  el('#feedback p').textContent = feedback.explanation;
-  highScore = saveHighScore(state.score);
-  sound.play(feedback.correct ? state.streak % 5 === 0 ? 'streak' : 'correct' : 'incorrect');
-  vibrate(preferences.haptics, feedback.correct);
+  el('#feedback').className = 'feedback';
+  el('#feedback').innerHTML = '<strong></strong><p>Your next scenario is coming up.</p>';
+  el('#feedback strong').textContent = engine.state.feedback!.answer === 'green' ? 'Green flag. Noted.' : 'Red flag. Noted.';
+  sound.play('pick');
+  vibrate(preferences.haptics);
   renderHud();
 }
 function choose(answer: Answer): void {
-  if (screen !== 'game' || modal.open || document.hidden) return;
+  if (screen !== 'game' || modal.open || document.hidden || !appActive) return;
   sound.unlock();
   advanceClock(performance.now());
   if (engine.answer(answer)) showFeedback();
 }
 function finish(): void {
-  highScore = saveHighScore(engine.state.score);
   const state = engine.state;
-  const accuracy = state.answered ? Math.round(state.correct / state.answered * 100) : 0;
-  const record = state.score > previousBest;
-  el('#final-score').textContent = state.score.toLocaleString();
-  el('#best-streak').textContent = String(state.bestStreak);
-  el('#accuracy').textContent = `${accuracy}%`;
-  el('#high-score').textContent = highScore.toLocaleString();
-  el('#record-label').textContent = record ? '✦ NEW PERSONAL BEST ✦' : 'EVERY RUN IS A FRESH READ';
-  el('#result-eyebrow').textContent = record ? 'LOOK AT YOU, READING THE ROOM' : 'THAT’S A WRAP';
-  el('#result-message').textContent = `${state.correct} of ${state.answered} signs spotted. ${accuracy >= 75 ? 'Your instincts are on a roll.' : 'Every sign is a chance to learn.'}`;
+  const verdict = partyVerdict(state.taste);
+  const chaos = tastePercent(state.taste.redAccepted, state.taste.redShown) ?? 0;
+  const green = tastePercent(state.taste.greenAccepted, state.taste.greenShown) ?? 0;
+  el('#results-title').textContent = verdict.title;
+  el('#chaos-percent').textContent = `${chaos}%`;
+  el('#green-percent').textContent = `${green}%`;
+  el('#picks-made').textContent = String(state.answered);
+  el('#taste-detail').textContent = `${state.taste.redAccepted} of ${state.taste.redShown} red flags accepted`;
+  el('#result-message').textContent = verdict.line;
   el('#share-fallback').hidden = true;
   setScreen('results');
-  sound.play('over');
-  announce(`Run complete. ${state.score} points. ${accuracy} percent accuracy. Best streak ${state.bestStreak}.`);
+  sound.stopCountdown(); sound.play('finish');
+  announce(`Your verdict: ${verdict.title}. ${chaos} percent Taste for Chaos and ${green} percent green flag appreciation.`);
   el<HTMLButtonElement>('[data-action="replay"]').focus({ preventScroll: true });
 }
 function advanceClock(now: number): void {
   const elapsed = Math.max(0, now - lastFrame);
   lastFrame = now;
-  if (screen !== 'game' || document.hidden) return;
+  if (screen !== 'game' || document.hidden || !appActive) return;
   if (engine.state.phase === 'playing') {
     engine.tick(elapsed);
-    if (engine.state.phase as string === 'feedback') showFeedback();
-    else renderTimer();
+    renderTimer();
   } else if (engine.state.phase === 'feedback') {
     feedbackRemaining -= elapsed;
     if (feedbackRemaining <= 0) {
@@ -264,8 +270,9 @@ function frame(now: number): void { advanceClock(now); requestAnimationFrame(fra
 
 async function share(): Promise<void> {
   const state = engine.state;
-  const text = `RED FLAG RUSH — I scored ${state.score} with a best streak of ${state.bestStreak}! ${state.answered ? Math.round(state.correct / state.answered * 100) : 0}% accuracy. Can you read the room?`;
-  const data = { title: 'RED FLAG RUSH · Swipe the Signs', text };
+  const verdict = partyVerdict(state.taste);
+  const text = `RED FLAG RUSH. My result: ${verdict.title}. ${tastePercent(state.taste.redAccepted, state.taste.redShown)}% Taste for Chaos, ${tastePercent(state.taste.greenAccepted, state.taste.greenShown)}% green flag appreciation. What's your type?`;
+  const data = { title: 'RED FLAG RUSH. My verdict', text };
   if (navigator.share) {
     try { await navigator.share(data); return; }
     catch (error) { if (error instanceof DOMException && error.name === 'AbortError') return; }
@@ -296,15 +303,16 @@ app.addEventListener('click', (event) => {
     case 'resume': resume(); break;
     case 'help': showTutorial(); break;
     case 'close-tutorial': closeModal(); preferences = savePreferences({ tutorialSeen: true }); break;
-    case 'mute': preferences = savePreferences({ muted: !preferences.muted }); refreshSound(); sound.unlock(); break;
+    case 'party-open': party.open(); break;
+    case 'mute': toggleSound(); break;
     case 'haptics':
       preferences = savePreferences({ haptics: !preferences.haptics });
       button.setAttribute('aria-pressed', String(preferences.haptics));
       button.querySelector('strong')!.textContent = preferences.haptics ? 'ON' : 'OFF';
-      vibrate(preferences.haptics, true);
+      vibrate(preferences.haptics);
       break;
     case 'share': void share(); break;
-    case 'home': closeModal(); resetSwipe(); engine.pause(); highScore = saveHighScore(engine.state.score); setScreen('home'); el<HTMLButtonElement>('[data-action="start"]').focus(); break;
+    case 'home': closeModal(); resetSwipe(); engine.pause(); sound.stop(); setScreen('home'); el<HTMLButtonElement>('[data-action="start"]').focus(); break;
     case 'update': if (screen !== 'game') update?.(); break;
   }
 });
@@ -312,6 +320,7 @@ el('.brand').addEventListener('click', (event) => { event.preventDefault(); if (
 modal.addEventListener('cancel', (event) => {
   event.preventDefault();
   if (modalKind === 'pause') resume();
+  else if (modalKind === 'party') { closeModal(); party.hide(); }
   else { closeModal(); preferences = savePreferences({ tutorialSeen: true }); }
 });
 document.addEventListener('keydown', (event) => {
@@ -326,10 +335,34 @@ document.addEventListener('keydown', (event) => {
     else if (screen === 'results') start();
   }
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else lastFrame = performance.now(); });
-window.addEventListener('pagehide', () => { if (screen === 'game') pause(); });
+document.addEventListener('visibilitychange', () => { sound.setActive(!document.hidden && appActive); if (document.hidden) pause(); else lastFrame = performance.now(); });
+window.addEventListener('pagehide', () => { sound.setActive(false); if (screen === 'game') pause(); });
+window.addEventListener('pageshow', () => sound.setActive(!document.hidden && appActive));
+void setupNativeLifecycle({
+  onActiveChange(active) {
+    if (!active) pause();
+    appActive = active;
+    sound.setActive(active && !document.hidden);
+    lastFrame = performance.now();
+    // Returning to the app leaves the pause menu open until the player resumes.
+  },
+  onBackButton() {
+    if (modalKind === 'pause') resume();
+    else if (modalKind === 'tutorial') {
+      closeModal();
+      preferences = savePreferences({ tutorialSeen: true });
+    } else if (modalKind === 'party') {
+      closeModal();
+      party.hide();
+    } else if (screen === 'game') pause();
+    else if (screen === 'results') {
+      setScreen('home');
+      el<HTMLButtonElement>('[data-action="start"]').focus();
+    } else void minimizeNativeApp();
+  },
+});
 refreshSound();
 setScreen('home');
+if (isNativePlatform()) el('#offline-status').textContent = 'READY TO PLAY OFFLINE';
 setupPwa((apply) => { update = apply; el('#update-banner').hidden = screen === 'game'; }, () => { el('#offline-status').textContent = 'READY FOR YOUR NEXT OFFLINE RUN'; });
 requestAnimationFrame(frame);
-if (!preferences.tutorialSeen) showTutorial();

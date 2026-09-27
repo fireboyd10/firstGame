@@ -6,3 +6,16 @@ dist/
 .DS_Store
 # Original local brief; keep it in the workspace, out of the published game.
 /prompt.txt
+
+# Local tooling, native build output, and private signing material.
+.tools/
+android/.gradle/
+android/local.properties
+android/**/build/
+ios/App/Pods/
+ios/App/build/
+**/xcuserdata/
+*.keystore
+*.jks
+*.p12
+*.mobileprovision

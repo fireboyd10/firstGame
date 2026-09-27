@@ -119,6 +119,7 @@ try {
   const page = await timedPage(context);
   await check('First launch, tutorial, and start', async () => {
     await visible(page, '#home-title');
+    await page.locator('[data-action="start"]').click();
     await visible(page, '#modal[open]');
     await shot(page, 'tutorial-390x844');
     await page.locator('[data-action="begin"]').click();
@@ -345,6 +346,7 @@ try {
       Object.defineProperty(navigator, 'vibrate', { value: undefined });
     });
     const fallbackPage = await timedPage(fallback);
+    await fallbackPage.locator('[data-action="start"]').click();
     await fallbackPage.locator('[data-action="begin"]').click();
     await fallbackPage.locator(`[data-action="${await answerFor(fallbackPage)}"]`).click();
     assert.equal(await fallbackPage.locator('#streak').textContent(), '1');
@@ -373,6 +375,7 @@ try {
     const nestedContext = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
     const nestedNetwork = monitor(nestedContext, nested.origin, 'subpath');
     const nestedPage = await timedPage(nestedContext, nested.href);
+    await nestedPage.locator('[data-action="start"]').click();
     await nestedPage.locator('[data-action="begin"]').click();
     await readyForOffline(nestedPage);
     nestedNetwork.offline = true;

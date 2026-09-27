@@ -1,11 +1,15 @@
 # Privacy
 
-RED FLAG RUSH requires no account and includes no analytics, advertising, trackers, or telemetry. The game does not collect or transmit personal information, choices, or scores.
+RED FLAG RUSH has no accounts, advertising, analytics, or tracking SDKs.
 
-High scores, sound/vibration preferences, and tutorial state stay in localStorage on your device. The optional service worker caches the game files locally for offline play. Clearing browser/site storage, uninstalling the app, or browser storage cleanup can remove local progress and cached files.
+Solo scores, tutorial state, and sound/vibration preferences stay in localStorage on your device. An optional service worker caches static game files for offline solo play. Clearing browser storage or uninstalling can remove these records.
 
-The app requests its own static files from the host when you load or update it; it makes no third-party runtime requests. A hosting provider may keep its own standard web-server logs under its own policy.
+When you create or join a party, your chosen nickname, room code, votes, and calculated results are sent to the party server you connect to. The server keeps rooms in memory, with no database or vote log. Inactive rooms expire after two hours; stopping the server clears all rooms. Server HTTP rate limits temporarily use connecting IP addresses. A hosting provider or reverse proxy may retain its own access logs.
 
-Sharing is optional and only happens when you press Share my score. Your device's share sheet lets you choose a destination; the fallback copies the result to your clipboard or shows selectable text. No result is uploaded automatically.
+Votes stay private from other players during voting. As soon as every player has voted, room members see each other's choices. At the end, everyone in the room sees the personal percentages and ranking. The server operator can access the server's memory; room codes are invitations for a friends' game, not a confidential service.
 
-Entertainment and reflection only — not clinical advice.
+A random player token, nickname, room code, and server address are saved in your tab's sessionStorage so reloading can restore your seat. Leaving a room removes this saved session. Closing the tab clears it according to the browser's session-restoration behaviour. The app makes no party-server requests until you open party mode and join or resume a room.
+
+Native mobile builds may ask for local-network access when joining a Wi-Fi party. No location, contacts, camera, or microphone access is required.
+
+Sharing a solo score happens only when you press Share. Nothing is posted automatically. Party percentages are a game-night joke based on the deck's editorial classifications, not a personality assessment.

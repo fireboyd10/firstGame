@@ -1,9 +1,12 @@
+import { isNativePlatform } from './platform/native';
+
 /** Updates are offered by the UI only on the menu or results screen. */
 export function setupPwa(
   onUpdate: (apply: () => void) => void,
   onOfflineReady?: () => void,
 ): void {
-  if (!import.meta.env.PROD || !('serviceWorker' in navigator) || !window.isSecureContext) return;
+  // Native releases load their bundled assets and update through the app store.
+  if (isNativePlatform() || !import.meta.env.PROD || !('serviceWorker' in navigator) || !window.isSecureContext) return;
 
   let applyingUpdate = false;
   let reloading = false;

@@ -12,21 +12,17 @@ export interface Scenario {
 export type GamePhase = 'idle' | 'playing' | 'feedback' | 'paused' | 'over';
 
 export interface Feedback {
-  readonly correct: boolean;
-  readonly answer: Answer | null;
-  readonly explanation: string;
-  readonly points: number;
+  readonly answer: Answer;
 }
 
 export interface GameState {
   phase: GamePhase;
-  scenario: Scenario | null;
-  score: number;
-  lives: number;
-  streak: number;
-  bestStreak: number;
+  scenario: { readonly id: string; readonly text: string; readonly answer: Answer } | null;
+  totalRounds: number;
   answered: number;
-  correct: number;
+  redPicks: number;
+  greenPicks: number;
+  taste: { redShown: number; greenShown: number; redAccepted: number; greenAccepted: number };
   remainingMs: number;
   durationMs: number;
   feedback: Feedback | null;

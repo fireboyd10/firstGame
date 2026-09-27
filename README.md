@@ -1,67 +1,82 @@
 # RED FLAG RUSH
 
-**Swipe the Signs.** A portrait-first social intuition game: read an original scenario, flag the behavior red or green, and keep your streak alive. Three lives, 60 cards, a timer that ramps from 5 to 2.8 seconds, and a complete replay/share loop.
+**Red flag, but I like it.** A party game about dating, questionable taste, and the arguments your friends will absolutely have about both. Solo quick play is still available with its original lives, timer, scoring, and offline support.
 
-Built with Vite, vanilla TypeScript, semantic HTML, CSS, and original SVG art. No runtime dependencies, accounts, backend, analytics, remote assets, or API keys. Sound is synthesized on your device. Entertainment and reflection only — not clinical advice.
+## Play together on Wi-Fi
 
-## Start in VS Code
-
-Install a supported [Node.js LTS](https://nodejs.org/) with npm, then restart VS Code. Supported versions: Node 20.19+, 22.12+, or newer supported LTS; verified with Node 24.21.0. Git is optional for playing.
-
-Open this folder, choose **Terminal → New Terminal**, and run:
+On the computer, from this project folder:
 
 ```powershell
 npm.cmd ci
-npm.cmd run dev -- --host 0.0.0.0
+npm.cmd run party
 ```
 
-Open **http://localhost:5173/**. Keep the terminal open; Ctrl+C stops the server. Dependencies are already installed in the original delivery workspace. On macOS/Linux, use `npm` in place of `npm.cmd`. Windows users can also use `npm` if their PowerShell execution policy permits it; `npm.cmd` avoids changing that policy.
+`npm.cmd run party` builds the web game and party deck, then runs both the website and room API on port 3000. Keep that terminal open.
 
-`npm ci` installs the exact versions in the included lockfile. There are four development dependencies: Vite, TypeScript, Vitest, and playwright-core. No global npm packages are needed. `npm install` is also available when intentionally changing dependencies.
+1. Connect the computer and all phones to the same Wi-Fi.
+2. Open the **Same Wi-Fi** address printed in the terminal on every device, including the host. It looks like `http://192.168.1.203:3000/`, but your address can change.
+3. Choose **Play with friends**. The host enters a name, chooses 5, 10, or 15 scenarios, and creates a room.
+4. Everyone else enters a name and the six-character room code at the same website address.
+5. The host starts once everyone has joined. Two to eight people can play.
 
-## Play on your phone
+On phones, `localhost` means the phone itself. Use the computer's Wi-Fi address. If Windows Firewall prompts, allow Node on the **private network**. No router port forwarding is needed. Guest Wi-Fi, VPNs, or router client isolation can prevent devices from seeing one another.
 
-1. Connect the computer and phone to the **same Wi-Fi**.
-2. Start `npm.cmd run dev -- --host 0.0.0.0` and keep its terminal open.
-3. Open the **Network** URL printed by Vite on your phone. This computer's Wi-Fi IPv4 was **192.168.1.242**, so its tested LAN address is **http://192.168.1.242:5173/**. It can change: use `ipconfig` and find the Wi-Fi IPv4 address.
-4. If Windows Firewall asks, allow access on **private networks only**.
-5. Do not forward the port or expose the development server to the public internet.
+### Party rules
 
-LAN HTTP is for gameplay testing. It normally **cannot install/cache the PWA** because phones require HTTPS for service workers. Desktop `localhost` is a secure-context exception, which makes it useful for offline development testing.
+Everyone sees the same scenario. Voting starts with a 30-second timer, but **results appear immediately when everyone has voted**. Votes stay private until then. If somebody needs longer than 30 seconds, voting stays open until they answer. The results show the group split and who picked each flag, plus a question to get the conversation going. Only the host can start the next scenario.
 
-## Controls
+Final results show:
 
-| Action | Touch / mouse | Keyboard |
-| --- | --- | --- |
-| Red flag | Swipe left or red button | Left Arrow |
-| Green flag | Swipe right or green button | Right Arrow |
-| Start / replay | Main button | Enter or Space on the button; also from the page |
-| Pause / resume | Pause / Back to it | Escape |
-| Restart | Circular-arrow button or pause menu | Tab to Restart, Enter |
+- **Taste for Chaos:** red-flag scenarios voted green divided by all red-flag scenarios shown.
+- **Green flag appreciation:** green-flag scenarios voted green divided by all green-flag scenarios shown.
+- A personal title, a funny line, and a ranking by red-flag tolerance. Ties share their rank without speed or healthy-behaviour tiebreakers.
 
-Wrong answers and timeouts cost one life. Correct answers earn 100 points plus up to 50 for speed; streaks of 5, 10, and 15 unlock ×2, ×3, and ×4. Explanations remain visible for 2.2 seconds; pausing also holds the explanation. Switching apps pauses a run until you explicitly resume. Sound and vibration are optional. High score, tutorial state, mute, and vibration preferences stay in localStorage; if storage is blocked, the current session still works.
+Every deck contains both types. The classifications are editorial takes used for final scores, not revealed as right/wrong feedback between rounds. Party content is in `src/data/party-scenarios.ts`, separate from the solo deck. Room themes change the crowd label, not scoring or assumptions about gender.
 
-## Production and offline play
+Reloading the same tab restores your seat. A disconnected player can return and finish voting. After a minute without contact, the host can explicitly remove that player; the server never invents a vote. Hosting transfers if the host leaves or stops responding. Rooms are held in memory, expire after two hours without activity, and disappear when the server stops.
+
+### If a room will not connect
+
+- Stop any old terminal running this project and run `npm.cmd run party` again. Reload the game. On an installed PWA, accept **Update & reload** if offered.
+- Open the same printed address **and port** on every phone. A room on port 3000 is separate from a room on port 5173.
+- Check `http://YOUR-COMPUTER-IP:3000/api/health`. It should show `red-flag-party` and version `2`. If it will not load on a phone, check the Wi-Fi connection and firewall.
+- A static file host alone cannot create rooms. Use the included server, or set the address under **Wi-Fi connection** to a running party server.
+
+## Development
+
+Web commands support Node 20.19 or Node 22.12 and newer. Node 24 LTS is recommended for native tooling. On macOS/Linux, use `npm` in place of `npm.cmd`.
+
+```powershell
+npm.cmd run dev
+```
+
+Vite runs on port 5173 and includes the room API. Its **Network** URL works for multiplayer too. Restart the dev server after server-code changes. Vite preview also includes a room API:
 
 ```powershell
 npm.cmd run build
-npm.cmd run preview -- --host 0.0.0.0
+npm.cmd run preview
 ```
 
-Open **http://localhost:4173/** on the computer. For LAN gameplay with the production build, use **http://192.168.1.242:4173/** (or your current IPv4).
+Use one server process and one address for the whole party. Development and preview rooms are independent and do not survive restarting their server.
 
-Deploy the **contents of `dist/`** to a normal static HTTPS host. Nothing has been deployed automatically. Optional choices include GitHub Pages, Cloudflare Pages, and Netlify; see [Vite's static-hosting instructions](https://vite.dev/guide/static-deploy.html). Build command: `npm run build`; output folder: `dist`. The preview server is for local verification, not public hosting.
+## Solo controls and offline play
 
-`base: './'` in `vite.config.ts` supports a domain root or a subfolder without rebuilding. Serve the folder URL with a trailing slash, for example `/firstGame/`. The game has no required server-side routes. Refreshing its root URL works on static hosts; the installed worker also handles offline nested navigation. A first-ever visit to an arbitrary nested path needs a host fallback to the app's `index.html` and an absolute Vite `base` matching the hosting folder.
+| Action | Touch / mouse | Keyboard |
+| --- | --- | --- |
+| Red / green | Swipe left / right or flag buttons | Left / Right Arrow |
+| Start / replay | Main button | Enter or Space |
+| Pause / resume | Pause / Back to it | Escape |
+| Restart | Restart button or pause menu | Tab, then Enter |
 
-Builds generate an explicit worker with a content-derived cache version and a list of only local assets. All shell assets must download successfully before installation completes. Updates wait; an **Update & reload** button appears on the start/results screen, never during a run. An old tab keeps its cached assets when another tab accepts an update. HTML and hashed assets stay on one release. Browser storage eviction can remove the offline copy, requiring another online visit.
+Solo has three lives, 60 cards, streak multipliers, and a timer ramping from 5 to 2.8 seconds. Sound is synthesized locally. High score and settings remain on the device. Switching apps pauses solo play until you resume. Neutral illustrations do not indicate the answer.
 
-To install the HTTPS version after loading it online and seeing **Ready for your next offline run**:
+For offline solo play, deploy `dist/` to static HTTPS hosting and install from the browser's Add to Home Screen menu. The service worker caches only build assets. Updates wait until you choose to reload; room API responses are never cached. Ordinary LAN HTTP is enough for party play, but does not enable PWA installation/offline caching on phones. Multiplayer always needs a running, reachable party server.
 
-- **Android:** Chrome/Edge/Samsung Internet menu → **Install app / Add to Home screen**.
-- **iPhone Safari:** Share → **Add to Home Screen**.
+## Future deployment
 
-Then launch once, switch to airplane mode, and reopen it. Installation UI varies by browser. Without service-worker support, online gameplay still works. The worker is intentionally disabled in the Vite development server.
+Android and iOS Capacitor projects are included. See [docs/MOBILE.md](docs/MOBILE.md) for toolchains, syncing, LAN testing, and release preparation. No native package has been signed, built for a device, or published.
+
+For an internet-hosted party, build the web game and server deck, then run `npm run start:party` behind HTTPS. `PARTY_PORT` defaults to 3000. Set `PARTY_ALLOWED_ORIGINS` to a comma-separated list of exact frontend origins if using a different domain or reverse proxy. `VITE_PARTY_SERVER_URL` can set the client default at build time. Use one server instance; room state is in memory. Public scaling/persistence would need a shared room store. Do not expose the development server publicly.
 
 ## Verification
 
@@ -69,67 +84,12 @@ Then launch once, switch to airplane mode, and reopen it. Installation UI varies
 npm.cmd run typecheck
 npm.cmd test
 npm.cmd run build
+npm.cmd run build:server
+npm.cmd run test:party
 ```
 
-For reproducible browser checks, keep a production preview running in one terminal, then in a second terminal run:
+The party browser check uses three isolated browser sessions and a real HTTP server to verify immediate reveals after the final vote. An injected server clock also checks extra time for a late voter. Server unit tests verify vote privacy and host-controlled progression. It uses an installed Edge or Chrome, with no browser download.
 
-```powershell
-npm.cmd run test:browser
-```
+For the original solo/layout/offline browser checks, leave preview running and run `npm.cmd run test:browser` in another terminal. Override `BASE_URL` if preview uses a different port. Reports and screenshots go into ignored `.qa/`.
 
-The script uses your existing Edge or Chrome; it downloads no browser. Optional environment variables: `BROWSER_CHANNEL=chrome` or `BASE_URL=http://127.0.0.1:4173/`. Reports and screenshots go into ignored `.qa/`.
-
-Verified on Windows / Node 24.21.0 / Edge 153:
-
-- Clean lockfile installation passed (`npm.cmd ci --offline --cache .npm-cache --no-audit --no-fund`, using the previously downloaded packages).
-- Type checking, **21 unit tests**, and the production build passed.
-- **22 browser check groups** passed: tutorial, full run, both buttons, real pointer drag/snap-back, keyboard, score/lives/multiplier, duplicate-input protection, timer, pause/visibility, game over, replay/restart, sharing fallbacks, and persistence.
-- No horizontal overflow at **320×568, 360×800, 390×844, 412×915, 1440×1000, and 844×390**. Every scenario and explanation was checked at 320×568.
-- Manifest, actual PNG dimensions, production worker, offline reload/deep navigation, subfolder hosting, and unavailable storage/audio/haptics/service-worker fallbacks passed. No uncaught browser errors, missing assets, or external runtime requests were observed.
-
-Offline automation used the **localhost secure-context exception**, not a deployed HTTPS site. Physical Android/iPhone, Safari/WebKit, native sharing, installation prompts, and actual device vibration still need the phone checks below.
-
-## Troubleshooting
-
-| Problem | Fix |
-| --- | --- |
-| Node not found / too old | Install current Node LTS with npm and Add to PATH selected, fully restart VS Code, then run `node --version` and `npm.cmd --version`. |
-| Old npm crashes with `edgesOut` | Use `npm.cmd ci` with the supplied lockfile. If still blocked, invoke bundled npm directly: `node "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" ci`. An older global npm can shadow the bundled version. |
-| Corporate certificate error | With Node 24 and an approved certificate already in the Windows trust store, set `$env:NODE_USE_SYSTEM_CA = '1'` in this terminal, then retry. Do not disable certificate verification. |
-| `EPERM` on `esbuild.exe` during installation | Stop this project's dev/preview server with Ctrl+C, then rerun `npm.cmd ci`; Windows may lock the running executable. |
-| Port already in use | Stop the earlier server, or use `npm.cmd run dev -- --host 0.0.0.0 --port 5174` and open the new port. |
-| Phone cannot reach computer | Confirm the current IPv4, same Wi-Fi, running terminal, and `--host 0.0.0.0`. A phone cannot reach your computer using `localhost`. |
-| Firewall / Wi-Fi trouble | Allow Node on Windows private networks. Guest networks, AP isolation, VPNs, or mobile data can separate the devices; use the same trusted Wi-Fi. |
-| Old service-worker content | Accept Update & reload, or close all app tabs and reopen online. Last resort: DevTools → Application → Service Workers → Unregister. Clearing all site storage also removes scores/preferences. |
-| Install option / offline missing | Use a production build on HTTPS. Plain phone LAN HTTP and Vite dev intentionally lack full PWA behavior. |
-
-## Optional Android APK / Play Store path
-
-The web game needs none of the Android toolchain. When ready, add Capacitor in a separate change following its [installation guide](https://capacitorjs.com/docs/getting-started) and [Android setup](https://capacitorjs.com/docs/android):
-
-```powershell
-npm.cmd install @capacitor/core @capacitor/android
-npm.cmd install --save-dev @capacitor/cli
-npx.cmd cap init
-```
-
-Choose your final app name and unique package ID; set `webDir: 'dist'` in Capacitor's config. Then:
-
-```powershell
-npm.cmd run build
-npx.cmd cap add android
-npx.cmd cap sync android
-npx.cmd cap open android
-```
-
-Install the Android Studio/SDK/JDK versions required by the Capacitor version you choose. Test on a device or emulator, then use Android Studio for a debug APK or a signed release APK/AAB. A Google Play release also needs your signing key, developer account, store listing, and current store-policy steps. None of Capacitor, Android Studio, SDK, emulator, JDK, or Gradle has been installed by this project.
-
-## Project map and launch checklist
-
-`src/game/` owns testable state, timing, scoring, decks, and storage; `src/data/scenarios.ts` owns the cards. `src/main.ts` connects the UI, `src/swipe.ts` handles Pointer Events, and `src/audio/` synthesizes sound. PWA assets live in `public/`; `scripts/build-sw.mjs` versions the production cache. Icons are committed PNGs generated without packages by `npm.cmd run icons` from original code-native art.
-
-- [ ] On Android and iPhone, finish a run with swipes and buttons; verify pause after switching apps.
-- [ ] Try muted play, restart, replay, sharing, portrait/landscape, and reduced-motion settings.
-- [ ] On the eventual HTTPS site, install to the home screen and complete an airplane-mode run.
-- [ ] Test one deployed update and check that a live run is not interrupted.
-- [ ] Review [PRIVACY.md](PRIVACY.md), store copy, and signing before public release.
+Physical Android/iPhone, Safari/WebKit, native sharing, and signed-store builds still require device testing. See [PRIVACY.md](PRIVACY.md) for data handling.
