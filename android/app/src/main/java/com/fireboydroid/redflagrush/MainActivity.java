@@ -1,4 +1,4 @@
-package com.example.redflagrush;
+package com.fireboydroid.redflagrush;
 
 import com.getcapacitor.BridgeActivity;
 

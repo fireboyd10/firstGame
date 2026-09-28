@@ -7,11 +7,15 @@ export interface ScenarioEntry {
   readonly explanation: string;
   readonly difficulty: 1 | 2 | 3;
   readonly category: string;
+  /** Premium pack this card belongs to; undefined = free base content. */
+  readonly packId?: string;
   readonly discussion?: string;
 }
 
 const sections: ReadonlyArray<{
   category: string;
+  /** Set for premium packs; base categories omit it. */
+  packId?: string;
   green: readonly string[];
   red: readonly string[];
 }> = [
@@ -363,21 +367,119 @@ const sections: ReadonlyArray<{
       'They turn online presence into a way to monitor your entire life.',
     ],
   },
+  // ---- Premium packs (unlocked via in-app purchase; see src/purchases) ----
+  {
+    category: 'After Dark',
+    packId: 'afterdark',
+    green: [
+      'They ask what you like instead of assuming the internet wrote the manual.',
+      'You say "not tonight" and they order dessert and mean it.',
+      'They check in mid-kiss with a "this okay?" — and it actually is.',
+      'They brag about your brain before your body.',
+      'The morning after, they make breakfast and zero weirdness.',
+      'They can laugh when something is awkward instead of making it a thing.',
+      'They keep what happens in the bedroom in the bedroom.',
+      'They flirt with you in public with eye contact only. Classy, not grabby.',
+      'They ask before sending a spicy photo — and wait for an enthusiastic yes.',
+      'They treat the consent conversation as part of the fun, not a mood killer.',
+      'They notice you are not in the mood before you say a single word.',
+      'They hype you up constantly but never rush you anywhere.',
+    ],
+    red: [
+      'They sulk the whole evening because you said "not tonight".',
+      'They rate your body out loud like a restaurant review.',
+      'They hear a hesitant "maybe" and call pushing past it confidence.',
+      'They recap your private life to their friends like a podcast episode.',
+      'They send an explicit photo at 2pm on a workday. Unasked.',
+      'They keep score of who initiated last like it is a league table.',
+      'They call your boundaries "boring" to pressure you past them.',
+      'They get theirs, roll over, and forget you exist until next time.',
+      'They try a move they saw in a video without ever asking you first.',
+      'They only text after midnight. You know exactly why.',
+      'They treat "I am tired" as the opening bid in a negotiation.',
+      'Their idea of dirty talk is listing their exes.',
+    ],
+  },
+  {
+    category: 'Delulu & Icks',
+    packId: 'delulu',
+    green: [
+      'They hear your ick list and just stop chewing loudly. Growth.',
+      'They say "I like you" in plain text. No games, no lore.',
+      'Their situationship era is closed. They say what they want.',
+      'They post you without holding a soft-launch strategy meeting first.',
+      'They apologise without a Notes-app statement.',
+      'Their online presence is unhinged but their communication is elite.',
+      'They tell their friends the nice things about you, not the drama.',
+      'They say "goodnight" instead of leaving you on delivered.',
+      'They are openly delulu about your future and honest about it.',
+      'They plan the second date before the first one ends — respectfully.',
+      'They double-text and own it. Confidence, not chaos.',
+      'They ask what your icks are so they can dodge them on purpose.',
+    ],
+    red: [
+      'They give you the ick, then send you a podcast episode about feelings.',
+      'They keep you in "almost" for six months. Situationship speedrun.',
+      'They are "bad at texting" but post forty stories a day.',
+      'They call every ex crazy. The common denominator is waving at you.',
+      'They soft-launch you for eight months. You are furniture.',
+      'They want "no labels" but get jealous like a spouse.',
+      'They call stalking your location "being a little delulu hehe".',
+      'They ghost you, then return every autumn like a seasonal depression.',
+      'They flirt with everyone online and call you insecure for noticing.',
+      'They say "if they wanted to, they would" while doing absolutely nothing.',
+      'Their beige flag is having no flag. There is nobody home.',
+      'They ask "what are we?" then vote against every possible answer.',
+    ],
+  },
+  {
+    category: 'The Ex Files',
+    packId: 'exfiles',
+    green: [
+      'They speak about their ex like a normal human they once knew.',
+      'They returned the hoodie. No ceremony, no hostage situation.',
+      'They wish their ex well and then never mention them again.',
+      'They took real time alone before dating you. Healing: completed.',
+      'They can bump into an ex and introduce you without a single glitch.',
+      'They deleted the couple photos but kept the lessons.',
+      'They told you why their last relationship ended. Calmly. Once.',
+      'They never compare you to anyone. You are the whole event.',
+      'Their breakup playlist stays in the past where it belongs.',
+      'They unfollowed their ex without being asked and without a speech.',
+      'They can admit "my ex had a point there" without combusting.',
+      'They closed the chapter. Not "left the door open". Closed. Locked.',
+    ],
+    red: [
+      'They still have their ex as an emergency contact "by accident".',
+      'They watch their ex’s stories daily. For closure, apparently.',
+      'Every restaurant is "where me and my ex used to go".',
+      'They kept the ring. "For the memories." The MEMORIES.',
+      'They drunk-text their ex and call it processing.',
+      'They compare your cooking to their ex’s mother. Weekly.',
+      'They are "just friends with the ex" but hide the friendship from you.',
+      'They monitor their ex’s new partner like it is a part-time job.',
+      'They have broken up three times. With the same person. This quarter.',
+      'They screenshot your arguments for a group chat their ex is in.',
+      'They keep a labelled box of their ex’s stuff "as a joke".',
+      'They say "my ex would never" mid-argument, then act surprised you leave.',
+    ],
+  },
 ] as const;
 
-const makeCard = (category: string, text: string, answer: ScenarioAnswer, index: number): ScenarioEntry => {
+const makeCard = (category: string, text: string, answer: ScenarioAnswer, index: number, packId?: string): ScenarioEntry => {
   const difficulty: 1 | 2 | 3 = (index % 3) + 1 as 1 | 2 | 3;
   const explanation = answer === 'green'
     ? `${category} feels healthy when everyone is respected, clear, and free to choose.`
     : `${category} feels risky when comfort, consent, or clear limits are ignored.`;
 
   return {
-    id: `${category.toLowerCase()}-${answer}-${String(index + 1).padStart(2, '0')}`,
+    id: `${(packId ?? category).toLowerCase().replace(/[^a-z]+/g, '-')}-${answer}-${String(index + 1).padStart(2, '0')}`,
     text,
     answer,
     explanation,
     difficulty,
     category,
+    ...(packId ? { packId } : {}),
     discussion: answer === 'green' ? 'What makes this feel safe and respectful?' : 'What makes this feel pushy, controlling, or unfair?',
   };
 };
@@ -385,11 +487,18 @@ const makeCard = (category: string, text: string, answer: ScenarioAnswer, index:
 export function buildScenarioBank(): ScenarioEntry[] {
   const cards: ScenarioEntry[] = [];
   for (const section of sections) {
-    section.green.forEach((text, index) => cards.push(makeCard(section.category, text, 'green', cards.length + index + 1)));
-    section.red.forEach((text, index) => cards.push(makeCard(section.category, text, 'red', cards.length + index + 1)));
+    section.green.forEach((text, index) => cards.push(makeCard(section.category, text, 'green', cards.length + index + 1, section.packId)));
+    section.red.forEach((text, index) => cards.push(makeCard(section.category, text, 'red', cards.length + index + 1, section.packId)));
   }
   return cards;
 }
 
 export const scenarios = buildScenarioBank();
 export const partyScenarios = buildScenarioBank();
+
+/** All category names in bank order, and the category each premium pack adds. */
+export const ALL_CATEGORIES: readonly string[] = sections.map((section) => section.category);
+export const BASE_CATEGORIES: readonly string[] = sections.filter((section) => !section.packId).map((section) => section.category);
+export const PACK_CATEGORY: Readonly<Record<string, string>> = Object.fromEntries(
+  sections.filter((section) => section.packId).map((section) => [section.packId!, section.category]),
+);

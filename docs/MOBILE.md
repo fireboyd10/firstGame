@@ -38,8 +38,8 @@ iOS declares a local-network usage description and a local-network ATS exception
 
 ## Before store submission
 
-- Replace `com.example.redflagrush` consistently in Capacitor config and both native projects with your permanent owned identifier. Set release versions and signing.
-- Replace generated native launcher icons and splash assets with final game branding. Web/PWA icons already exist.
+- The permanent identifier `com.fireboydroid.redflagrush` is set consistently in Capacitor config and both native projects. Set release versions and signing.
+- Native launcher icons and splash screens are generated from the game artwork (`npm run icons:native`). Swap in final branding later if the artwork changes.
 - Set the production party endpoint, exact allowed frontend origins, and HTTPS. Solo can remain entirely offline; the native app does not host rooms itself.
 - Run the unit, server, and browser checks, then test actual Android and iOS devices: solo pause/resume, native Back, Wi-Fi joining, local-network permission denial, app switching during a vote, reconnecting, safe areas, large text, and a complete multiplayer game.
 - Review the privacy notice and store data disclosures for your final hosting setup. Keep signing keys outside version control.

@@ -9,6 +9,10 @@ import { bindSwipe } from './swipe';
 import { setupPwa } from './pwa';
 import { isNativePlatform, setupNativeLifecycle, minimizeNativeApp } from './platform/native';
 import { createPartyUi } from './multiplayer/ui';
+import { createAdManager, type AdManager } from './ads/ad-manager';
+import { createPurchaseManager, PurchaseManager } from './purchases/purchases';
+import { BASE_CATEGORIES } from './data/scenario-bank';
+import { BUNDLE_PRODUCT_ID, BUNDLE_FALLBACK_PRICE, BUNDLE_TITLE, PACKS } from './purchases/products';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
@@ -37,6 +41,7 @@ app.innerHTML = `
             <div class="rules-strip"><span>2 to 8 friends</span><i></i><span>Same Wi-Fi</span><i></i><span>Your call.</span></div>
             <button class="primary-button" data-action="party-open">PLAY WITH FRIENDS ${icon('arrow')}</button>
             <button class="secondary-button start-button" data-action="start">FIND MY TYPE</button>
+            <button class="text-button" data-action="shop-open">UNLOCK SPICY TOPICS 🔥</button>
             <p class="home-best">10 choices. One very personal reveal.</p>
           </div>
         </div>
@@ -89,7 +94,7 @@ let preferences = loadPreferences();
 let screen: 'home' | 'game' | 'results' = 'home';
 let feedbackRemaining = 0;
 let lastFrame = performance.now();
-let modalKind: 'tutorial' | 'pause' | 'party' | null = null;
+let modalKind: 'tutorial' | 'pause' | 'party' | 'shop' | null = null;
 let update: (() => void) | null = null;
 let toastTimeout = 0;
 let appActive = true;
@@ -97,11 +102,27 @@ const modal = el<HTMLDialogElement>('#modal');
 const card = el('#scenario-card');
 const party = createPartyUi(el('#modal-content'), {
   onOpen() { modalKind = 'party'; if (!modal.open) modal.showModal(); },
-  onClose() { closeModal(); },
+  // A finished party match is a natural breakpoint, same schedule as solo runs.
+  // A finished party match is a natural breakpoint, same schedule as solo runs.
+  // Ad first, then close — a defensive close can never swallow a due ad.
+  onClose() { void ads?.maybeShowInterstitial(); closeModal(); },
+  onGameFinished() { ads?.recordGameCompleted(); },
+  purchases: () => purchaseManager,
+  onPurchase(packIds) {
+    const names = packIds.map((id) => PACKS.find((pack) => pack.packId === id)?.title ?? id).join(', ');
+    toast(`Unlocked: ${names}. The deck just got more interesting.`);
+    if (modalKind === 'shop') showShop();
+  },
   sound,
   onMute: toggleSound,
 });
 const resetSwipe = bindSwipe(card, () => screen === 'game' && engine.state.phase === 'playing' && !modal.open, choose);
+// Ads and purchases: native apps only. Web keeps base content and stays ad-free.
+let ads: AdManager | null = null;
+void createAdManager().then((manager) => { ads = manager; });
+let purchaseManager: PurchaseManager = new PurchaseManager(null);
+let purchasesSettled = false;
+const purchasesReady: Promise<void> = createPurchaseManager().then((manager) => { purchaseManager = manager; purchasesSettled = true; });
 
 function setScreen(next: typeof screen): void {
   screen = next;
@@ -130,7 +151,66 @@ function toggleSound(): void {
   preferences = savePreferences({ muted: !preferences.muted });
   refreshSound(); sound.unlock();
 }
-function closeModal(): void { if (modalKind === 'party') party.hide(); modal.close(); modalKind = null; }
+function closeModal(): void { if (modalKind === 'party') party.hide(); if (modal.open) modal.close(); modalKind = null; }
+
+/** Premium packs shop: non-consumable unlocks through the stores' official billing. */
+function showShop(): void {
+  if (screen === 'game') return;
+  modalKind = 'shop';
+  const store = purchaseManager;
+  // Native billing swaps in async; the web build never has a store. While native
+  // init is pending, prices show disabled instead of the wrong "in the app" web
+  // fallback, and the shop re-renders as soon as the store answers.
+  const storePending = isNativePlatform() && !store.storeAvailable && !purchasesSettled;
+  const storeMissing = isNativePlatform() && !store.storeAvailable && purchasesSettled;
+  const packRow = (packId: string, title: string, tagline: string, productId: string, fallback: string) => {
+    const owned = store.owns(packId);
+    const price = store.priceFor(productId) ?? fallback;
+    const action = owned
+      ? '<span class="pack-owned">UNLOCKED ✓</span>'
+      : store.storeAvailable
+        ? `<button class="secondary-button" data-action="buy-pack" data-product="${productId}">${price}</button>`
+        : storePending
+          ? `<button class="secondary-button" disabled>${price}</button>`
+          : storeMissing
+            ? ''
+            : '<span class="pack-owned">IN THE APP</span>';
+    return `<div class="pack-row"><div><strong>${title}</strong><span>${tagline}</span></div>${action}</div>`;
+  };
+  const bundleAction = store.storeAvailable
+    ? `<button class="primary-button" data-action="buy-pack" data-product="${BUNDLE_PRODUCT_ID}">${store.priceFor(BUNDLE_PRODUCT_ID) ?? BUNDLE_FALLBACK_PRICE}</button>`
+    : storePending
+      ? `<button class="primary-button" disabled>${BUNDLE_FALLBACK_PRICE}</button>`
+      : storeMissing
+        ? ''
+        : '<span class="pack-owned">IN THE APP</span>';
+  const footer = store.storeAvailable
+    ? '<button class="text-button" data-action="restore-purchases">Restore purchases</button>'
+    : storePending
+      ? '<p class="modal-description">Contacting the store…</p>'
+      : storeMissing
+        ? '<p class="modal-description">The store is unavailable on this device right now. Purchases need Google Play or the App Store.</p>'
+        : '<p class="modal-description">Purchases happen in the Android/iOS app. Grab it to unlock these decks.</p>';
+  el('#modal-content').innerHTML = `<div class="modal-heading"><span class="eyebrow">SPICIER DECKS</span><button class="icon-button" data-action="close-shop" aria-label="Close shop">${icon('cross')}</button></div><h2 id="modal-title">New topics.<br><em>New arguments.</em></h2><p class="modal-description">One small unlock each, yours forever, on every device with your store account. Owned topics join solo runs automatically and can be toggled for party rooms.</p>
+    ${PACKS.map((pack) => packRow(pack.packId, pack.title, pack.tagline, pack.productId, pack.fallbackPrice)).join('')}
+    ${PACKS.every((pack) => store.owns(pack.packId)) ? '' : `<div class="pack-row pack-row-bundle"><div><strong>${BUNDLE_TITLE}</strong><span>Every current pack, one price.</span></div>${bundleAction}</div>`}
+    ${footer}`;
+  if (!modal.open) modal.showModal();
+  if (storePending) void purchasesReady.then(() => { if (modal.open && modalKind === 'shop') showShop(); });
+}
+async function shopBuy(productId: string): Promise<void> {
+  const granted = await purchaseManager.buy(productId);
+  if (granted.length) {
+    const names = granted.map((id) => PACKS.find((pack) => pack.packId === id)?.title ?? id).join(', ');
+    toast(`Unlocked: ${names}. The deck just got more interesting.`);
+    showShop();
+  } else toast('Purchase not completed. Nothing was charged.');
+}
+async function shopRestore(): Promise<void> {
+  const restored = await purchaseManager.restore();
+  toast(restored.length ? `Restored: ${restored.map((id) => PACKS.find((pack) => pack.packId === id)?.title ?? id).join(', ')}.` : 'Nothing to restore on this store account.');
+  if (modalKind === 'shop') showShop();
+}
 function showTutorial(): void {
   if (screen === 'game') return;
   modalKind = 'tutorial';
@@ -162,7 +242,7 @@ function start(): void {
   sound.stop();
   sound.unlock();
   resetSwipe();
-  engine.start();
+  engine.start(purchaseManager.unlockedCategories(BASE_CATEGORIES)); // solo: base topics + every owned pack
   feedbackRemaining = 0;
   lastFrame = performance.now();
   setScreen('game');
@@ -245,6 +325,8 @@ function finish(): void {
   el('#taste-detail').textContent = `${state.taste.redAccepted} of ${state.taste.redShown} red flags accepted`;
   el('#result-message').textContent = verdict.line;
   el('#share-fallback').hidden = true;
+  // A finished run is the natural breakpoint: count it for the ad schedule.
+  ads?.recordGameCompleted();
   setScreen('results');
   sound.stopCountdown(); sound.play('finish');
   announce(`Your verdict: ${verdict.title}. ${chaos} percent Taste for Chaos and ${green} percent green flag appreciation.`);
@@ -297,13 +379,18 @@ app.addEventListener('click', (event) => {
   sound.unlock();
   switch (action) {
     case 'start': preferences.tutorialSeen ? start() : showTutorial(); break;
-    case 'begin': case 'replay': case 'restart': start(); break;
+    case 'begin': case 'restart': start(); break;
+    case 'replay': void ads?.maybeShowInterstitial(); start(); break;
     case 'red': case 'green': choose(action); break;
     case 'pause': pause(); break;
     case 'resume': resume(); break;
     case 'help': showTutorial(); break;
     case 'close-tutorial': closeModal(); preferences = savePreferences({ tutorialSeen: true }); break;
     case 'party-open': party.open(); break;
+    case 'shop-open': showShop(); break;
+    case 'close-shop': closeModal(); break;
+    case 'buy-pack': void shopBuy(button.dataset.product!); break;
+    case 'restore-purchases': void shopRestore(); break;
     case 'mute': toggleSound(); break;
     case 'haptics':
       preferences = savePreferences({ haptics: !preferences.haptics });
@@ -312,7 +399,7 @@ app.addEventListener('click', (event) => {
       vibrate(preferences.haptics);
       break;
     case 'share': void share(); break;
-    case 'home': closeModal(); resetSwipe(); engine.pause(); sound.stop(); setScreen('home'); el<HTMLButtonElement>('[data-action="start"]').focus(); break;
+    case 'home': if (screen === 'results') void ads?.maybeShowInterstitial(); closeModal(); resetSwipe(); engine.pause(); sound.stop(); setScreen('home'); el<HTMLButtonElement>('[data-action="start"]').focus(); break;
     case 'update': if (screen !== 'game') update?.(); break;
   }
 });
@@ -320,7 +407,8 @@ el('.brand').addEventListener('click', (event) => { event.preventDefault(); if (
 modal.addEventListener('cancel', (event) => {
   event.preventDefault();
   if (modalKind === 'pause') resume();
-  else if (modalKind === 'party') { closeModal(); party.hide(); }
+  else if (modalKind === 'shop') closeModal();
+  else if (modalKind === 'party') { closeModal(); party.hide(); void ads?.maybeShowInterstitial(); }
   else { closeModal(); preferences = savePreferences({ tutorialSeen: true }); }
 });
 document.addEventListener('keydown', (event) => {
@@ -332,7 +420,7 @@ document.addEventListener('keydown', (event) => {
   } else if ((event.key === ' ' || event.key === 'Enter') && !(event.target as HTMLElement).closest('button,a')) {
     event.preventDefault();
     if (screen === 'home') preferences.tutorialSeen ? start() : showTutorial();
-    else if (screen === 'results') start();
+    else if (screen === 'results') { void ads?.maybeShowInterstitial(); start(); }
   }
 });
 document.addEventListener('visibilitychange', () => { sound.setActive(!document.hidden && appActive); if (document.hidden) pause(); else lastFrame = performance.now(); });
@@ -348,12 +436,14 @@ void setupNativeLifecycle({
   },
   onBackButton() {
     if (modalKind === 'pause') resume();
+    else if (modalKind === 'shop') closeModal();
     else if (modalKind === 'tutorial') {
       closeModal();
       preferences = savePreferences({ tutorialSeen: true });
     } else if (modalKind === 'party') {
       closeModal();
       party.hide();
+      void ads?.maybeShowInterstitial();
     } else if (screen === 'game') pause();
     else if (screen === 'results') {
       setScreen('home');

@@ -2,11 +2,14 @@ import { cardArt, icon } from '../art';
 import type { Sound } from '../audio/sound';
 import { partyVerdict, type PartyTaste } from './personality';
 import { detectPartyBaseUrl, enterParty, getPartyRoomState, normalizePartyUrl, partyAction, PartyRequestError, type PartyRoomState, type PartySession } from './party';
+import { BASE_CATEGORIES, PACK_CATEGORY } from '../data/scenario-bank';
+import { BUNDLE_PRODUCT_ID, BUNDLE_FALLBACK_PRICE, BUNDLE_TITLE, PACKS } from '../purchases/products';
+import type { PurchaseManager } from '../purchases/purchases';
 
 const escape = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 const key = 'red-flag-rush.party-session.v2';
 
-export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; onClose: () => void; sound: Sound; onMute: () => void }) {
+export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; onClose: () => void; onGameFinished?: () => void; onPurchase?: (packIds: string[]) => void; purchases: () => PurchaseManager; sound: Sound; onMute: () => void }) {
   let session: PartySession | null = null;
   try {
     const saved = JSON.parse(sessionStorage.getItem(key) || 'null');
@@ -25,11 +28,30 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
   let error = '';
   let lastRender = '';
   let lastView = '';
+  // Topics the host picked: every base category plus any owned packs. Synced to the room in the lobby.
+  let selectedTopics = new Set<string>(BASE_CATEGORIES);
+  let selectedLength = 10; // survives re-renders from topic toggles
+  let selectedTheme = 'everyone';
+  // Typed details survive re-renders (topic toggles redraw the form).
+  let savedName = '';
+  let savedCode = '';
 
   const save = () => { try { if (session) sessionStorage.setItem(key, JSON.stringify(session)); else sessionStorage.removeItem(key); } catch { /* Keep in memory. */ } };
   const input = (id: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`#${id}`)?.value.trim() || '';
   const button = (action: string, label: string, disabled = false, secondary = false) => `<button class="${secondary ? 'secondary' : 'primary'}-button" data-party-action="${action}" ${busy || disabled ? 'disabled' : ''}>${label}</button>`;
   const lengths = (value: number) => `<label class="field-label" for="party-length">How many scenarios?</label><select class="party-input" id="party-length" ${busy ? 'disabled' : ''}>${[5, 10, 15].map((count) => `<option value="${count}" ${count === value ? 'selected' : ''}>${count} scenarios</option>`).join('')}</select>`;
+  /** Every topic is a toggle; locked packs lead with their store price and buy on tap. */
+  const topicsPicker = (interactive: boolean) => {
+    const store = hooks.purchases();
+    const chip = (topic: string) => `<button class="topic-chip" data-party-action="topic" data-topic="${escape(topic)}" aria-pressed="${selectedTopics.has(topic)}" ${busy || !interactive ? 'disabled' : ''}>${escape(topic)}</button>`;
+    const locked = PACKS.filter((pack) => !store.owns(pack.packId)).map((pack) => {
+      const price = store.priceFor(pack.productId) ?? pack.fallbackPrice;
+      return `<button class="topic-chip topic-locked" data-party-action="buy-pack" data-product="${pack.productId}" ${busy || !interactive ? 'disabled' : ''} title="${escape(pack.tagline)}">🔒 ${escape(pack.title)} · ${escape(price)}</button>`;
+    });
+    const allOwned = PACKS.every((pack) => store.owns(pack.packId));
+    const bundle = allOwned ? '' : `<button class="topic-chip topic-bundle" data-party-action="buy-pack" data-product="${BUNDLE_PRODUCT_ID}" ${busy || !interactive ? 'disabled' : ''}>✨ ${escape(BUNDLE_TITLE)} · ${escape(store.priceFor(BUNDLE_PRODUCT_ID) ?? BUNDLE_FALLBACK_PRICE)}</button>`;
+    return `<div class="field-label">Topics in this game</div><div class="party-topics">${[...BASE_CATEGORIES].map(chip).join('')}${PACKS.filter((pack) => store.owns(pack.packId)).map((pack) => chip(PACK_CATEGORY[pack.packId]!)).join('')}${locked.join('')}${bundle}</div>`;
+  };
   const heading = (label: string) => `<div class="modal-heading"><span class="eyebrow">${label}</span><div class="party-dialog-actions"><button class="icon-button" data-party-action="mute" aria-label="${hooks.sound.muted ? 'Unmute' : 'Mute'} sound" aria-pressed="${hooks.sound.muted}">${icon(hooks.sound.muted ? 'mute' : 'sound')}</button><button class="icon-button" data-party-action="close" aria-label="Close party">${icon('cross')}</button></div></div>`;
   function displayError() {
     const target = root.querySelector<HTMLElement>('#party-error');
@@ -53,21 +75,24 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
     let html = heading(state ? `ROOM ${escape(state.code)}` : 'THE GROUP CHAT, IN PERSON');
     if (!session) {
       html += `<h2 id="modal-title">Red flag,<br><em>but I like it.</em></h2><p class="modal-description">Bring your friends. Pick your flags. Prepare to explain yourself.</p>
-        <label class="field-label" for="party-name">Your name</label><input class="party-input" id="party-name" maxlength="24" autocomplete="nickname" placeholder="What should we call you?">
-        ${lengths(10)}<label class="field-label" for="party-theme">Your crowd</label><select class="party-input" id="party-theme"><option value="everyone">The whole group</option><option value="girls">Girls' night</option><option value="boys">Boys' night</option></select>
+        <label class="field-label" for="party-name">Your name</label><input class="party-input" id="party-name" maxlength="24" autocomplete="nickname" placeholder="What should we call you?" value="${escape(savedName)}">
+        ${lengths(selectedLength)}${topicsPicker(true)}<label class="field-label" for="party-theme">Your crowd</label><select class="party-input" id="party-theme">${[['everyone', 'The whole group'], ['girls', "Girls' night"], ['boys', "Boys' night"]].map(([value, label]) => `<option value="${value}" ${value === selectedTheme ? 'selected' : ''}>${label}</option>`).join('')}</select>
         ${button('create', 'CREATE A ROOM')}
-        <div class="party-divider">Joining your friends?</div><label class="field-label" for="party-code">Room code</label><div class="party-inline"><input class="party-input party-code-input" id="party-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABCDEF">${button('join', 'JOIN', false, true)}</div>
+        <div class="party-divider">Joining your friends?</div><label class="field-label" for="party-code">Room code</label><div class="party-inline"><input class="party-input party-code-input" id="party-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABCDEF" value="${escape(savedCode)}">${button('join', 'JOIN', false, true)}</div>
         <details class="party-connection" ${!detectPartyBaseUrl() ? 'open' : ''}><summary>Wi-Fi connection</summary><p>Open the same game address on every phone. The room code works at that address.</p><label class="field-label" for="party-server">Party server address</label><input class="party-input" id="party-server" type="url" value="${escape(detectPartyBaseUrl())}" placeholder="http://192.168.1.20:3000"><p>On your computer, run <code>npm.cmd run party</code> and keep the terminal open. Use the Same Wi-Fi address it prints.</p></details>`;
     } else if (!state) {
       html += `<h2 id="modal-title">Getting everyone together.</h2><p class="modal-description">Reconnecting to room ${escape(session.code)}.</p>${button('refresh', 'TRY AGAIN')}${button('leave', 'LEAVE ROOM', false, true)}`;
     } else {
       const host = state.hostId === session.playerId;
       const me = state.players.find((player) => player.id === session!.playerId);
+      // The room is the source of truth in the lobby; local picks apply on create.
+      if (state.phase === 'lobby' && Array.isArray(state.categories)) selectedTopics = new Set(state.categories);
+      if (state.phase === 'lobby') selectedLength = state.totalRounds;
       const names = (answer: string) => (state!.results || []).filter((vote) => vote.answer === answer).map((vote) => escape(state!.players.find((player) => player.id === vote.playerId)?.name)).join(', ');
       if (state.phase === 'lobby') {
         const vibe = state.theme === 'girls' ? "Girls' night is on." : state.theme === 'boys' ? "Boys' night is on." : 'Everyone in?';
         html += `<div id="party-lobby"><h2 id="modal-title">${vibe}</h2><p class="modal-description">Same Wi-Fi. Same game address. Share this code:</p><strong class="party-room-code">${escape(state.code)}</strong><p class="party-address">${escape(session.joinUrl || session.baseUrl)}</p><ul class="party-player-list">${state.players.map((player) => `<li class="party-player"><span>${escape(player.name)}${player.id === session!.playerId ? ' (you)' : ''}</span><small>${player.id === state!.hostId ? 'Host' : player.connected ? 'Ready' : 'Reconnecting'}</small></li>`).join('')}</ul>
-          ${host ? lengths(state.totalRounds) + button('start', 'EVERYONE IN? LET\'S GO', state.players.length < 2) : `<p class="modal-description">${state.totalRounds} scenarios. Waiting for the host to start.</p>`}</div>`;
+          ${host ? lengths(state.totalRounds) + topicsPicker(true) + button('start', 'EVERYONE IN? LET\'S GO', state.players.length < 2) : `<p class="modal-description">${state.totalRounds} scenarios · ${escape((state.categories ?? []).join(', '))}. Waiting for the host to start.</p>`}</div>`;
       } else if (state.phase === 'question') {
         html += `<div id="party-question"><p class="eyebrow">SCENARIO ${state.round} OF ${state.totalRounds}</p><h2 id="modal-title" class="sr-only">Make your call</h2><div class="party-scenario">${cardArt(state.round)}<p>${escape(state.scenario?.text)}</p></div><p id="party-countdown" class="party-countdown" role="timer" aria-live="off"></p><div class="party-vote-row">${button('red', '🚩 RED FLAG', me?.answered, true)}${button('green', '💚 GREEN FLAG', me?.answered, true)}</div><p id="party-status" class="modal-description" role="status">${me?.answered ? 'Your vote is in. Keep a straight face.' : 'Go with your own take. Nobody sees it yet.'}</p><p class="modal-hint">${state.players.filter((player) => player.answered).length} of ${state.players.length} votes in</p></div>`;
       } else if (state.phase === 'reveal') {
@@ -105,6 +130,7 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
     state = value; clockOffset = value.serverNow - Date.now(); error = ''; render();
     if (opened && previous === 'question' && value.phase === 'reveal') hooks.sound.play('reveal');
     if (opened && previous === 'reveal' && value.phase === 'finished') hooks.sound.play('finish');
+    if (previous !== 'finished' && value.phase === 'finished') hooks.onGameFinished?.();
   }
   function failed(cause: unknown) {
     error = cause instanceof Error ? cause.message : 'Could not reach the room. Try again.';
@@ -136,9 +162,28 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
       if (action === 'create' || action === 'join') {
         if (!name) throw new Error('What should we call you? Add your name first.');
         if (action === 'join' && !/^[A-Z2-9]{6}$/.test(code)) throw new Error('Enter the six-character room code.');
-        session = await enterParty(normalizePartyUrl(address), name, action === 'join' ? code : undefined, length, theme);
+        session = await enterParty(normalizePartyUrl(address), name, action === 'join' ? code : undefined, length, theme, [...selectedTopics]);
         save(); state = null;
         accept(await getPartyRoomState(session));
+      } else if (action === 'topic') {
+        // Topic toggles are host-picked: local on the create form, synced to the room in the lobby.
+        const topic = target.dataset.topic!;
+        if (selectedTopics.has(topic)) { if (selectedTopics.size > 1) selectedTopics.delete(topic); }
+        else selectedTopics.add(topic);
+        if (session && state?.phase === 'lobby' && state.hostId === session.playerId) {
+          accept(await partyAction(session, 'settings', { categories: [...selectedTopics] }));
+        }
+      } else if (action === 'buy-pack') {
+        const granted = await hooks.purchases().buy(target.dataset.product!);
+        if (!granted.length) throw new Error('Purchase not completed. Nothing was charged.');
+        for (const packId of granted) {
+          const category = PACK_CATEGORY[packId];
+          if (category) selectedTopics.add(category);
+        }
+        hooks.onPurchase?.(granted);
+        if (session && state?.phase === 'lobby' && state.hostId === session.playerId) {
+          accept(await partyAction(session, 'settings', { categories: [...selectedTopics] }));
+        }
       } else if (session) {
         if (action === 'leave') {
           try { await partyAction(session, 'leave'); } catch { /* Leaving locally always works; server sessions expire. */ }
@@ -162,8 +207,17 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
     const target = (event.target as Element).closest<HTMLElement>('[data-party-action]');
     if (target && !target.hasAttribute('disabled')) void act(target.dataset.partyAction!, target);
   });
+  root.addEventListener('input', (event) => {
+    const field = event.target as HTMLInputElement;
+    if (field.id === 'party-name') savedName = field.value;
+    if (field.id === 'party-code') savedCode = field.value;
+  });
   root.addEventListener('change', (event) => {
-    if ((event.target as HTMLElement).id === 'party-length' && session && state?.phase === 'lobby') void act('settings', event.target as HTMLElement);
+    if ((event.target as HTMLElement).id === 'party-theme') selectedTheme = (event.target as HTMLSelectElement).value || 'everyone';
+    if ((event.target as HTMLElement).id === 'party-length') {
+      selectedLength = Number((event.target as HTMLSelectElement).value) || 10;
+      if (session && state?.phase === 'lobby') void act('settings', event.target as HTMLElement);
+    }
   });
   return {
     open() { opened = true; render(true); hooks.onOpen(); void refresh(); window.clearInterval(interval); window.clearInterval(clockInterval); interval = window.setInterval(() => void refresh(), 1000); clockInterval = window.setInterval(tick, 250); },

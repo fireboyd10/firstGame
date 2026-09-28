@@ -382,3 +382,26 @@ dialog h2 { margin: 10px 0 15px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Topic picker chips (party create/lobby) */
+.party-topics { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
+.topic-chip {
+  border: 1px solid #68445e; background: #241726; color: #fff0d7; border-radius: 999px;
+  padding: 7px 13px; font: inherit; font-size: 0.82rem; letter-spacing: 0.04em; cursor: pointer;
+}
+.topic-chip[aria-pressed="true"] { background: #ff4869; border-color: #ff4869; color: #160f1c; font-weight: 700; }
+.topic-chip:disabled { opacity: 0.55; cursor: default; }
+.topic-chip.topic-locked { border-style: dashed; color: #ff7eae; }
+.topic-chip.topic-bundle { border-color: #49dfa4; color: #49dfa4; }
+
+/* Shop pack rows */
+.pack-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid #3a2436; max-width: 100%;
+}
+.pack-row > div { flex: 1 1 auto; min-width: 0; }
+.pack-row strong { display: block; letter-spacing: 0.05em; overflow-wrap: break-word; }
+.pack-row span { display: block; font-size: 0.8rem; color: #c9a8bd; margin-top: 2px; }
+.pack-row .secondary-button, .pack-row .primary-button { flex: 0 0 auto; width: auto; min-width: 92px; min-height: 44px; margin-top: 0; padding: 10px 18px; }
+.pack-row-bundle { border: 1px solid #49dfa4; border-radius: 10px; padding: 12px; margin-top: 6px; }
+.pack-owned { color: #49dfa4; font-size: 0.8rem; letter-spacing: 0.08em; font-weight: 700; }

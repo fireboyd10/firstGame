@@ -9,6 +9,19 @@
     <key>NSAllowsLocalNetworking</key>
     <true/>
   </dict>
+  <!-- AdMob. This is Google's official TEST app ID — replace with your
+       production AdMob app ID before store release (docs/DEPLOYMENT.md).
+       The game never requests App Tracking Transparency authorization, so
+       ads are non-personalized and no ATT prompt is needed. -->
+  <key>GADApplicationIdentifier</key>
+  <string>ca-app-pub-3940256099942544~1458002511</string>
+  <key>SKAdNetworkItems</key>
+  <array>
+    <dict>
+      <key>SKAdNetworkIdentifier</key>
+      <string>cstr6suwn9.skadnetwork</string>
+    </dict>
+  </array>
   <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>

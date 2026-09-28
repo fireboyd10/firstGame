@@ -11,6 +11,7 @@ export interface PartyRoomState {
   hostId: string; playerId: string; players: PartyPlayer[];
   round: number; totalRounds: number; deadline: number | null; serverNow: number;
   canAdvance: boolean; scenario: { text: string; difficulty: number } | null;
+  categories?: string[];
   results?: Array<{ playerId: string; answer: 'red' | 'green' | null }>;
   discussion?: string; winnerIds?: string[];
 }
@@ -65,11 +66,11 @@ async function request<T>(baseUrl: string, path: string, init: RequestInit = {})
   } finally { window.clearTimeout(timer); }
 }
 
-export async function enterParty(baseUrl: string, name: string, code?: string, totalRounds = 10, theme = 'everyone'): Promise<PartySession> {
+export async function enterParty(baseUrl: string, name: string, code?: string, totalRounds = 10, theme = 'everyone', categories?: string[]): Promise<PartySession> {
   const health = await request<{ service: string; version: number; wifiUrls?: string[] }>(baseUrl, '/api/health');
   if (health.service !== 'red-flag-party' || health.version !== 2) throw new PartyRequestError('Restart the party server with npm.cmd run party to load the latest version.');
   const result = await request<{ code: string; token: string; playerId: string }>(baseUrl, code ? `/api/rooms/${encodeURIComponent(code)}/join` : '/api/rooms', {
-    method: 'POST', body: JSON.stringify({ name, totalRounds, theme }),
+    method: 'POST', body: JSON.stringify({ name, totalRounds, theme, categories }),
   });
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(baseUrl).hostname);
   return { ...result, name, baseUrl, joinUrl: loopback ? health.wifiUrls?.[0] || baseUrl : baseUrl };

@@ -19,6 +19,7 @@
     "test:server": "node --test server/*.test.mjs",
     "test:party": "node scripts/party-browser-check.mjs",
     "icons": "node scripts/generate-icons.mjs",
+    "icons:native": "node scripts/generate-native-icons.mjs",
     "mobile:doctor": "node scripts/mobile.mjs doctor",
     "mobile:add:android": "node scripts/mobile.mjs add android",
     "mobile:add:ios": "node scripts/mobile.mjs add ios",
@@ -38,9 +39,11 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@capacitor-community/admob": "^8.1.0",
     "@capacitor/android": "8.5.2",
     "@capacitor/app": "8.1.1",
     "@capacitor/core": "8.5.2",
-    "@capacitor/ios": "8.5.2"
+    "@capacitor/ios": "8.5.2",
+    "@capgo/native-purchases": "^8.8.1"
   }
 }

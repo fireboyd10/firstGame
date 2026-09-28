@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  // Development identifier. Choose an owned, permanent ID before store release.
-  appId: 'com.example.redflagrush',
+  // Permanent store identifier. Locked once first uploaded to Google Play.
+  appId: 'com.fireboydroid.redflagrush',
   appName: 'Red Flag Rush',
   webDir: 'dist',
   backgroundColor: '#18111d',

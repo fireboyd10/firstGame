@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RoomService, RateLimiter } from './rooms.mjs';
 
-const cards = Array.from({ length: 32 }, (_, index) => ({ id: String(index), text: `Dating situation ${index}`, answer: index % 2 ? 'green' : 'red', difficulty: 2, discussion: 'Would you go on another date?' }));
+const cards = Array.from({ length: 32 }, (_, index) => ({ id: String(index), text: `Dating situation ${index}`, answer: index % 2 ? 'green' : 'red', category: index % 4 < 2 ? 'Base' : 'Other', difficulty: 2, discussion: 'Would you go on another date?' }));
 function fixture(totalRounds = 5, names = ['Ada', 'Bea']) {
   let clock = 1000;
   const service = new RoomService(cards, { now: () => clock, random: (max) => max - 1 });
@@ -108,6 +108,19 @@ test('disconnecting never submits a vote; the host can remove an absent player e
   f.action(f.host, 'remove', { playerId: f.players[1].playerId });
   assert.equal(f.state().phase, 'reveal');
   assert.throws(() => f.state(f.players[1]), { status: 401 });
+});
+
+test('host picks topics; the deck uses only chosen categories; bad topics are rejected', () => {
+  const f = fixture();
+  assert.deepEqual(f.state().categories, ['Base', 'Other']); // default: all free base topics, in bank order
+  assert.throws(() => f.action(f.players[1], 'settings', { categories: ['Base'] }), { status: 403 });
+  assert.throws(() => f.action(f.host, 'settings', { categories: [] }), { status: 400 });
+  assert.throws(() => f.action(f.host, 'settings', { categories: ['Nope'] }), { status: 400 });
+  assert.deepEqual(f.action(f.host, 'settings', { categories: ['Base'] }).categories, ['Base']);
+  f.action(f.host, 'start');
+  const deck = f.service.rooms.get(f.host.code).deck;
+  assert.equal(deck.length, 5);
+  assert.ok(deck.every((card) => card.category === 'Base'));
 });
 
 test('host transfer, leaving, expiry, and rate limiting are bounded', () => {

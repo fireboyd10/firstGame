@@ -1,7 +1,7 @@
 type Cue = 'pick' | 'reveal' | 'finish';
 type Voice = { oscillator: OscillatorNode; gain: GainNode; countdown: boolean };
 
-/** Original, quiet game-show tones, synthesized locally without media downloads. */
+/** Original game-show tones, synthesized locally without media downloads. */
 export class Sound {
   private context: AudioContext | null = null;
   private voices = new Set<Voice>();
@@ -21,7 +21,7 @@ export class Sound {
       if (this.context.state === 'suspended') void this.context.resume().catch(() => {});
     } catch { /* Sound is optional. */ }
   }
-  private tone(frequency: number, delay: number, duration: number, volume: number, countdown = false): void {
+  private tone(frequency: number, delay: number, duration: number, volume: number, countdown = false, type: OscillatorType = 'sine'): void {
     if (this.muted || !this.active || !this.context || this.context.state !== 'running') return;
     try {
       const ctx = this.context;
@@ -29,10 +29,10 @@ export class Sound {
       const gain = ctx.createGain();
       const voice = { oscillator, gain, countdown };
       const start = ctx.currentTime + delay;
-      oscillator.type = 'sine';
+      oscillator.type = type;
       oscillator.frequency.value = frequency;
       gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(volume, start + .008);
+      gain.gain.linearRampToValueAtTime(volume, start + .006);
       gain.gain.exponentialRampToValueAtTime(.001, start + duration);
       oscillator.connect(gain).connect(ctx.destination);
       this.voices.add(voice);
@@ -42,8 +42,19 @@ export class Sound {
     } catch { /* Audio failures never interrupt a vote. */ }
   }
   play(cue: Cue): void {
-    const notes: Record<Cue, number[]> = { pick: [392, 523], reveal: [392, 523, 659], finish: [523, 659, 784, 1047] };
-    notes[cue].forEach((frequency, index) => this.tone(frequency, index * .09, .16, .035));
+    // Snappy pluck for a pick, rising triad for a reveal, full fanfare + chord for a verdict.
+    if (cue === 'pick') {
+      this.tone(587, 0, .09, .075, false, 'square');
+      this.tone(880, .07, .13, .085, false, 'triangle');
+      return;
+    }
+    if (cue === 'reveal') {
+      [392, 523, 659, 784].forEach((frequency, index) => this.tone(frequency, index * .08, .18, .075, false, 'triangle'));
+      return;
+    }
+    [523, 659, 784].forEach((frequency, index) => this.tone(frequency, index * .09, .16, .08, false, 'triangle'));
+    [784, 1047, 1319].forEach((frequency) => this.tone(frequency, .3, .38, .07, false, 'triangle')); // victory chord
+    this.tone(262, .3, .38, .05, false, 'sine'); // warm low root under the chord
   }
   countdown(round: string, remainingMs: number): void {
     if (remainingMs <= 0 || !Number.isFinite(remainingMs) || this.muted || !this.active) { this.stopCountdown(); return; }
@@ -52,10 +63,10 @@ export class Sound {
     const beat = `${round}:${interval}:${step}`;
     if (beat === this.beat) return;
     this.beat = beat;
-    // Four plucky notes, with a faster, higher tick near the end. No answer cues.
-    const frequency = [330, 392, 440, 392][step % 4]! * (remainingMs <= 5000 ? 2 : 1);
-    this.tone(frequency, 0, .065, .018, true);
-    if (interval === 1000) this.tone(165, .08, .07, .01, true);
+    // Bright plucky tick, twice as high near the end, with a low heartbeat on slow beats.
+    const frequency = [440, 523, 587, 523][step % 4]! * (remainingMs <= 5000 ? 2 : 1);
+    this.tone(frequency, 0, .06, .05, true, 'square');
+    if (interval === 1000) this.tone(165, .09, .09, .032, true);
   }
   stopCountdown(): void {
     this.beat = '';

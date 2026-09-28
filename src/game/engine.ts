@@ -17,7 +17,7 @@ export class GameEngine {
   constructor(private readonly random: () => number = Math.random) {}
   get state(): Readonly<GameState> { return this.current; }
 
-  start(): void {
+  start(categories?: readonly string[]): void {
     const shuffle = <T>(cards: T[]): T[] => {
       for (let i = cards.length - 1; i > 0; i--) {
         const other = Math.floor(this.random() * (i + 1));
@@ -25,11 +25,15 @@ export class GameEngine {
       }
       return cards;
     };
+    const pool = categories?.length
+      ? partyScenarios.filter((card) => categories.includes(card.category))
+      : partyScenarios.filter((card) => !card.packId); // default: free base topics only
     const previous = this.current.scenario?.id;
     this.deck = shuffle((['red', 'green'] as const).flatMap((answer) =>
-      shuffle(partyScenarios.filter((card) => card.answer === answer)).slice(0, 5)));
-    if (this.deck[0]!.id === previous) [this.deck[0], this.deck[1]] = [this.deck[1]!, this.deck[0]!];
+      shuffle(pool.filter((card) => card.answer === answer)).slice(0, 5)));
+    if (this.deck.length > 1 && this.deck[0]!.id === previous) [this.deck[0], this.deck[1]] = [this.deck[1]!, this.deck[0]!];
     this.current = initialState();
+    this.current.totalRounds = this.deck.length;
     this.showCard();
   }
 
@@ -66,6 +70,7 @@ export class GameEngine {
     if (this.current.answered === this.current.totalRounds) { this.current.phase = 'over'; return; }
     this.showCard();
   }
+
   private showCard(): void {
     this.current.scenario = this.deck[this.current.answered]!;
     this.current.remainingMs = this.current.durationMs;

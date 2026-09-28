@@ -74,7 +74,7 @@ For offline solo play, deploy `dist/` to static HTTPS hosting and install from t
 
 ## Future deployment
 
-Android and iOS Capacitor projects are included. See [docs/MOBILE.md](docs/MOBILE.md) for toolchains, syncing, LAN testing, and release preparation. No native package has been signed, built for a device, or published.
+Android and iOS Capacitor projects are included. See [docs/MOBILE.md](docs/MOBILE.md) for toolchains, syncing, and LAN testing, and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for building the signed Android AAB, the cloud iOS build, and store submission. The app ID is final (`com.fireboydroid.redflagrush`); store submission and physical-device testing remain.
 
 For an internet-hosted party, build the web game and server deck, then run `npm run start:party` behind HTTPS. `PARTY_PORT` defaults to 3000. Set `PARTY_ALLOWED_ORIGINS` to a comma-separated list of exact frontend origins if using a different domain or reverse proxy. `VITE_PARTY_SERVER_URL` can set the client default at build time. Use one server instance; room state is in memory. Public scaling/persistence would need a shared room store. Do not expose the development server publicly.
 

@@ -17,5 +17,8 @@ ios/App/build/
 **/xcuserdata/
 *.keystore
 *.jks
+android/keystore.properties
+.env
+.env.*
 *.p12
 *.mobileprovision

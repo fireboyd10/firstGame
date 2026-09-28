@@ -3,7 +3,9 @@ import { resolve } from 'node:path';
 import ts from 'typescript';
 
 const project = resolve(import.meta.dirname, '..');
-const compiled = ts.transpileModule(await readFile(resolve(project, 'src/data/party-scenarios.ts'), 'utf8'), {
+// Transpile the data module itself: party-scenarios.ts is a re-export shim, and
+// Node cannot resolve relative imports from a data: URL base (ERR_UNSUPPORTED_RESOLVE_REQUEST).
+const compiled = ts.transpileModule(await readFile(resolve(project, 'src/data/scenario-bank.ts'), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
 }).outputText;
 const { partyScenarios: scenarios } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);

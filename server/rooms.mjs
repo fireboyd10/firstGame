@@ -22,10 +22,21 @@ export class RoomService {
   constructor(scenarios, { now = Date.now, random = randomInt, maxRooms = 500 } = {}) {
     if (!Array.isArray(scenarios) || ['red', 'green'].some((answer) => scenarios.filter((card) => card.answer === answer).length < 8)) throw new Error('At least eight scenarios of each flag are required.');
     this.scenarios = scenarios;
+    this.knownCategories = new Set(scenarios.map((card) => card.category));
+    this.baseCategories = [...new Set(scenarios.filter((card) => !card.packId).map((card) => card.category))];
     this.now = now;
     this.random = random;
     this.maxRooms = maxRooms;
     this.rooms = new Map();
+  }
+
+  /** Topics chosen by the host. Defaults to the free base categories. */
+  categoriesFor(value) {
+    if (value === undefined || value === null) return [...this.baseCategories];
+    if (!Array.isArray(value) || !value.length || value.length > this.knownCategories.size) fail(400, 'Pick at least one topic.');
+    const categories = [...new Set(value)];
+    if (categories.some((category) => typeof category !== 'string' || !this.knownCategories.has(category))) fail(400, 'Unknown topic. Refresh and try again.');
+    return categories;
   }
 
   sweep() {
@@ -33,16 +44,17 @@ export class RoomService {
     for (const [code, room] of this.rooms) if (room.touchedAt <= cutoff) this.rooms.delete(code);
   }
 
-  create({ name, theme = 'everyone', totalRounds = 10 } = {}) {
+  create({ name, theme = 'everyone', totalRounds = 10, categories } = {}) {
     name = playerName(name);
     if (!THEMES.has(theme)) fail(400, 'Choose a valid room theme.');
     if (!LENGTHS.has(totalRounds)) fail(400, 'Choose 5, 10, or 15 scenarios.');
+    categories = this.categoriesFor(categories);
     this.sweep();
     if (this.rooms.size >= this.maxRooms) fail(503, 'All party rooms are busy. Try again later.');
     let code;
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     do { code = Array.from({ length: 6 }, () => alphabet[this.random(alphabet.length)]).join(''); } while (this.rooms.has(code));
-    const room = { code, theme, totalRounds, players: [], hostId: '', phase: 'lobby', round: 0, deck: [], deadline: null, revealedAt: null, touchedAt: this.now() };
+    const room = { code, theme, totalRounds, categories, players: [], hostId: '', phase: 'lobby', round: 0, deck: [], deadline: null, revealedAt: null, touchedAt: this.now() };
     this.rooms.set(code, room);
     const joined = this.addPlayer(room, name);
     room.hostId = joined.playerId;
@@ -139,6 +151,7 @@ export class RoomService {
     const state = {
       code: room.code, theme: room.theme, phase: room.phase, hostId: room.hostId, playerId: player.id, players,
       round: room.round, totalRounds: room.totalRounds, deadline: room.deadline, serverNow: this.now(),
+      categories: room.categories,
       canAdvance: room.phase === 'reveal' && room.hostId === player.id,
       scenario: scenario ? { text: scenario.text, difficulty: scenario.difficulty } : null,
     };
@@ -159,9 +172,12 @@ export class RoomService {
     if (['start', 'next', 'replay', 'settings', 'remove'].includes(action) && room.hostId !== player.id) fail(403, 'Only the host can do that.');
     switch (action) {
       case 'settings':
-        if (room.phase !== 'lobby') fail(409, 'Change the game length in the lobby.');
-        if (!LENGTHS.has(body.totalRounds)) fail(400, 'Choose 5, 10, or 15 scenarios.');
-        room.totalRounds = body.totalRounds;
+        if (room.phase !== 'lobby') fail(409, 'Change topics and game length in the lobby.');
+        if (body.totalRounds !== undefined) {
+          if (!LENGTHS.has(body.totalRounds)) fail(400, 'Choose 5, 10, or 15 scenarios.');
+          room.totalRounds = body.totalRounds;
+        }
+        if (body.categories !== undefined) room.categories = this.categoriesFor(body.categories);
         break;
       case 'start': {
         if (room.phase !== 'lobby') fail(409, 'This party has already started.');
@@ -174,10 +190,11 @@ export class RoomService {
           return cards;
         };
         // Both percentages always have a meaningful denominator, even in a short game.
+        const pool = this.scenarios.filter((card) => room.categories.includes(card.category));
         const redCount = Math.floor(room.totalRounds / 2) + (room.totalRounds % 2 ? this.random(2) : 0);
         room.deck = shuffle([
-          ...shuffle(this.scenarios.filter((card) => card.answer === 'red')).slice(0, redCount),
-          ...shuffle(this.scenarios.filter((card) => card.answer === 'green')).slice(0, room.totalRounds - redCount),
+          ...shuffle(pool.filter((card) => card.answer === 'red')).slice(0, redCount),
+          ...shuffle(pool.filter((card) => card.answer === 'green')).slice(0, room.totalRounds - redCount),
         ]);
         this.question(room);
         break;
