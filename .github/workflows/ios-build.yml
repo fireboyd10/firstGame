@@ -9,15 +9,24 @@ name: iOS Build
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches: [main]
     paths:
       - 'src/**'
       - 'public/**'
+      - 'server/**'
+      - 'scripts/**'
       - 'ios/**'
       - 'capacitor.config.ts'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'index.html'
       - 'package*.json'
       - '.github/workflows/ios-build.yml'
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -34,7 +43,7 @@ jobs:
         run: npm ci
 
       - name: Typecheck and test
-        run: npm run typecheck && npx vitest run src
+        run: npm test
 
       - name: Build web app and sync iOS project
         run: npm run mobile:sync:ios
@@ -46,6 +55,7 @@ jobs:
           -scheme App
           -configuration Release
           -destination 'generic/platform=iOS'
+          -derivedDataPath ios/DerivedData
           CODE_SIGNING_ALLOWED=NO
           build
 
@@ -53,5 +63,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: red-flag-rush-ios-unsigned
-          path: ~/Library/Developer/Xcode/DerivedData/**/Build/Products/Release-iphoneos/*.app
+          path: ios/DerivedData/Build/Products/Release-iphoneos/*.app
+          if-no-files-found: error
           retention-days: 14

@@ -11,8 +11,8 @@
   </dict>
   <!-- AdMob. This is Google's official TEST app ID — replace with your
        production AdMob app ID before store release (docs/DEPLOYMENT.md).
-       The game never requests App Tracking Transparency authorization, so
-       ads are non-personalized and no ATT prompt is needed. -->
+       Live ad requests wait for UMP consent and explicitly set npa=true.
+       The game never requests App Tracking Transparency authorization. -->
   <key>GADApplicationIdentifier</key>
   <string>ca-app-pub-3940256099942544~1458002511</string>
   <key>SKAdNetworkItems</key>
@@ -44,6 +44,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

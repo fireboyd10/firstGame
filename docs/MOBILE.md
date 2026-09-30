@@ -1,6 +1,6 @@
 # Android and iOS preparation
 
-Capacitor 8.5.2, the App lifecycle plugin, an Android project, and an iOS Swift Package Manager project are included. The web game remains playable through its existing commands. No Android APK/AAB or iOS archive has been compiled or signed in this Windows workspace.
+Capacitor 8.5.2, the App lifecycle plugin, an Android project, and an iOS Swift Package Manager project are included. The web game remains playable through its existing commands. The iOS project has been built with Xcode on macOS for a physical iPhone 15. See docs/DEPLOYMENT.md for signed device builds, Android signing inputs, and the remaining store setup.
 
 ## Toolchains
 
@@ -44,4 +44,4 @@ iOS declares a local-network usage description and a local-network ATS exception
 - Run the unit, server, and browser checks, then test actual Android and iOS devices: solo pause/resume, native Back, Wi-Fi joining, local-network permission denial, app switching during a vote, reconnecting, safe areas, large text, and a complete multiplayer game.
 - Review the privacy notice and store data disclosures for your final hosting setup. Keep signing keys outside version control.
 
-App-store distribution, physical-device validation, final artwork, and signing remain release tasks. The native scaffolds and build workflow are prepared; store readiness has not been claimed.
+App-store distribution still requires production AdMob configuration, store products, account setup, store signing, and full device acceptance testing. The native projects and CI workflows provide reproducible builds; a successful compile is not store approval.

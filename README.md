@@ -1,6 +1,6 @@
 # RED FLAG RUSH
 
-**Red flag, but I like it.** A party game about dating, questionable taste, and the arguments your friends will absolutely have about both. Solo quick play is still available with its original lives, timer, scoring, and offline support.
+**Red flag, but I like it.** A party game about dating, questionable taste, and the arguments your friends will absolutely have about both. Solo play turns ten choices into a personal verdict and works offline.
 
 ## Play together on Wi-Fi
 
@@ -68,13 +68,13 @@ Use one server process and one address for the whole party. Development and prev
 | Pause / resume | Pause / Back to it | Escape |
 | Restart | Restart button or pause menu | Tab, then Enter |
 
-Solo has three lives, 60 cards, streak multipliers, and a timer ramping from 5 to 2.8 seconds. Sound is synthesized locally. High score and settings remain on the device. Switching apps pauses solo play until you resume. Neutral illustrations do not indicate the answer.
+Solo presents ten scenarios and reports your Taste for Chaos and Green Flag Appreciation. The 30-second countdown never forces an answer or changes your verdict. Sound is synthesized locally; settings remain on the device. Switching apps pauses solo play until you resume. Neutral illustrations do not indicate the answer.
 
 For offline solo play, deploy `dist/` to static HTTPS hosting and install from the browser's Add to Home Screen menu. The service worker caches only build assets. Updates wait until you choose to reload; room API responses are never cached. Ordinary LAN HTTP is enough for party play, but does not enable PWA installation/offline caching on phones. Multiplayer always needs a running, reachable party server.
 
-## Future deployment
+## Native builds and release preparation
 
-Android and iOS Capacitor projects are included. See [docs/MOBILE.md](docs/MOBILE.md) for toolchains, syncing, and LAN testing, and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for building the signed Android AAB, the cloud iOS build, and store submission. The app ID is final (`com.fireboydroid.redflagrush`); store submission and physical-device testing remain.
+Android and iOS Capacitor projects are included. See [docs/MOBILE.md](docs/MOBILE.md) for toolchains, syncing, and LAN testing, and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Android AAB signing, Xcode device installation, iOS archives, and the remaining store setup. Both platforms have CI compile checks. Run `npm run release:check:android` or `npm run release:check:ios` to identify missing local release inputs. The app ID is final (`com.fireboydroid.redflagrush`); test ads and a development-signed iPhone app are not store releases.
 
 For an internet-hosted party, build the web game and server deck, then run `npm run start:party` behind HTTPS. `PARTY_PORT` defaults to 3000. Set `PARTY_ALLOWED_ORIGINS` to a comma-separated list of exact frontend origins if using a different domain or reverse proxy. `VITE_PARTY_SERVER_URL` can set the client default at build time. Use one server instance; room state is in memory. Public scaling/persistence would need a shared room store. Do not expose the development server publicly.
 
@@ -88,8 +88,8 @@ npm.cmd run build:server
 npm.cmd run test:party
 ```
 
-The party browser check uses three isolated browser sessions and a real HTTP server to verify immediate reveals after the final vote. An injected server clock also checks extra time for a late voter. Server unit tests verify vote privacy and host-controlled progression. It uses an installed Edge or Chrome, with no browser download.
+The party browser check uses three isolated browser sessions and a real HTTP server to verify immediate reveals after the final vote. An injected server clock also checks extra time for a late voter. Server unit tests verify vote privacy and host-controlled progression. It uses installed Edge/Chrome or Playwright Chromium (`npx playwright-core install chromium`).
 
-For the original solo/layout/offline browser checks, leave preview running and run `npm.cmd run test:browser` in another terminal. Override `BASE_URL` if preview uses a different port. Reports and screenshots go into ignored `.qa/`.
+For the solo/layout/offline browser checks, leave preview running and run `npm.cmd run test:browser` in another terminal. Override `BASE_URL` if preview uses a different port. Reports and screenshots go into ignored `.qa/`.
 
 Physical Android/iPhone, Safari/WebKit, native sharing, and signed-store builds still require device testing. See [PRIVACY.md](PRIVACY.md) for data handling.

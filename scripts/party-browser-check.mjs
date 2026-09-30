@@ -19,10 +19,10 @@ await mkdir(resolve(project, '.qa'), { recursive: true });
 const report = { passed: [], errors: [] };
 let browser;
 try {
-  for (const channel of ['msedge', 'chrome']) {
+  for (const channel of ['msedge', 'chrome', undefined]) {
     try { browser = await chromium.launch({ channel, headless: true }); break; } catch { /* Try another installed browser. */ }
   }
-  assert(browser, 'Install Edge or Chrome to run the browser check.');
+  assert(browser, 'Install Edge/Chrome or run npx playwright-core install chromium.');
   const people = [];
   for (const name of ['Ada', 'Bea', 'Cleo']) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });

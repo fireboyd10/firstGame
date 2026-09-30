@@ -1,30 +1,44 @@
 # Deployment guide
 
-Current state: the app ID is final (`com.fireboydroid.redflagrush`), native icons and
-splash screens are generated from the game artwork (`npm run icons:native`), and the
-Android release build is signed locally. Solo play is fully offline; only multiplayer
-(party mode) needs a hosted server.
+Both native projects use `com.fireboydroid.redflagrush` (version 1.0, build 1).
+The iOS Swift packages include App, AdMob and Native Purchases. Android targets
+API 36 with JDK 21. The included CI workflows compile both platforms without
+store signing credentials; their artifacts are **not store-uploadable releases**.
 
-## Android: build a signed AAB (no Android Studio needed)
+Before submission, run `npm run release:check:android` or
+`npm run release:check:ios`. These checks deliberately fail while test ad IDs or
+Android signing inputs remain. They cannot verify products, accounts or listings
+in the store consoles. Test ads remain appropriate for local device previews.
 
-Prerequisites already on this machine: JDK 21 (Android Studio's bundled JBR) and the
-Android SDK at `D:\SDK`. The upload keystore lives at
-`android/app/upload-keystore.keystore` with credentials in `android/keystore.properties`.
-Both are gitignored — **back them up somewhere safe outside OneDrive/git** (a password
-manager or encrypted USB). Losing the keystore means you can never update the published app.
+## Android: build a signed AAB
 
-```powershell
-$env:JAVA_HOME = 'D:\Program Files\Android\Android Studio\jbr'
-$env:ANDROID_HOME = 'D:\SDK'
+Install JDK 21 and Android SDK platform 36/build-tools 36.0.0. On this Mac:
+
+```sh
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+npm ci
+npm run mobile:sync:android
+npm run release:check:android
 cd android
-.\gradlew.bat --no-daemon bundleRelease
+./gradlew --no-daemon lintRelease bundleRelease
 ```
 
-Output: `%LOCALAPPDATA%\red-flag-rush-build\app\outputs\bundle\release\app-release.aab` —
-this is the file you upload to Play Console. (Gradle builds outside OneDrive on purpose:
-OneDrive locks intermediates mid-sync and breaks builds. Override with
-`-PbuildRoot=D:\some\path`.) Bump `versionCode`/`versionName` in
-`android/app/build.gradle` before every new upload.
+Restore the **existing** upload keystore from the Windows machine and its
+`android/keystore.properties`; both are ignored by Git. The prior Windows setup
+used `android/app/upload-keystore.keystore`. See `android/keystore.properties.example`
+for the format. `storeFile` is absolute or relative to `android/app`. Do not generate
+a replacement key for an already published app; use the registered upload key or
+Google Play's upload-key reset process. Back up signing credentials privately.
+
+Without signing, ordinary release packaging fails with an actionable error.
+To verify compilation only, explicitly pass `-PallowUnsignedRelease=true`.
+That creates an **unsigned** AAB and does not replace store signing.
+
+Output on macOS/Linux: `android/build/app/outputs/bundle/release/app-release.aab`.
+Windows keeps output under `%LOCALAPPDATA%\red-flag-rush-build` to avoid OneDrive
+locking intermediates. Use `gradlew.bat` on Windows; `-PbuildRoot=/absolute/path`
+overrides the output directory. Increment `versionCode` for every new Play upload.
 
 ## Monetization (AdMob)
 
@@ -53,9 +67,15 @@ stays on automatically while they are in place. To go live:
    Keep testing with test ads on your own devices until release — clicking live ads
    during development gets AdMob accounts banned.
 
-Ads are non-personalized: no App Tracking Transparency prompt, no consent flow.
-If you later enable personalized ads in the EU/UK, add a UMP consent flow first and
-update PRIVACY.md and the store data-safety forms accordingly.
+Live ad requests explicitly use `npa: true` and wait for UMP's `canRequestAds`.
+The plugin is initialized first because it binds the iOS consent form presenter.
+Create and publish the required privacy messages in **AdMob → Privacy & messaging**;
+the app refreshes consent on launch, shows required forms, and exposes **Ad privacy
+choices** when UMP requires it. A failed consent check leaves ads disabled.
+Test units bypass this live-ad consent flow. The app does not request ATT.
+Non-personalized ads still require applicable consent and SDK data disclosures;
+see [Google's UMP integration](https://developers.google.com/admob/ios/privacy).
+Update PRIVACY.md and store privacy forms for the final AdMob/hosting setup.
 
 ## Premium topic packs (in-app purchases)
 
@@ -83,7 +103,8 @@ To activate (per store — IDs must match exactly):
 3. **App Store**: App Store Connect → In-App Purchases → same four IDs, type
    **Non-Consumable**. Test with a **Sandbox** Apple ID (free fake purchases).
 4. **Restore purchases** is already implemented (store rules require it) — the shop
-   and lobby offer it, and entitlements re-sync at every cold start.
+   and lobby offer it, and entitlements are queried silently at every cold start. The explicit restore
+   action can ask for store authentication; startup does not invoke it.
 5. **Content rating**: the spicy pack likely bumps the game to 17+/Mature in the
    IARC questionnaire. Keep scenarios suggestive, never explicit — explicit sexual
    content is banned on both stores.
@@ -103,21 +124,56 @@ To activate (per store — IDs must match exactly):
    host's server only).
 5. Test on a real phone via the internal track before production rollout.
 
-## iOS: build without a Mac
+## iOS: Xcode, device installation and archives
 
-`.github/workflows/ios-build.yml` compiles the app on a cloud Mac on every push to
-`main` (and manually via the Actions tab). Until you enrol in the Apple Developer
-Program it builds unsigned, proving the project compiles on real Apple tooling.
+Use Xcode 26+ and Node 22.12+. No CocoaPods installation is required.
 
-After enrolling ($99/year at https://developer.apple.com/programs/):
+```sh
+npm ci
+npm run mobile:sync:ios
+npm run mobile:open:ios
+```
 
-1. In App Store Connect, create the app with bundle ID `com.fireboydroid.redflagrush`.
-2. Add your Distribution certificate (`.p12`) and provisioning profile as repository
-   secrets, then extend the workflow with `xcodebuild archive` + `xcodebuild
-   -exportArchive` + upload via App Store Connect API key.
-   Tools like Fastlane Match or Codemagic make this easier if preferred.
-3. Complete the App Store listing, age rating, and privacy questionnaire (same answers
-   as Google Play's data-safety form).
+In Xcode, select **App**, your connected iPhone, and your team under
+**Signing & Capabilities**, then Run. This repository uses the current owner's
+team; override `DEVELOPMENT_TEAM` for another account. Automatic signing creates
+the development provisioning profile. The iPhone must be trusted, unlocked and
+have Developer Mode enabled.
+
+Equivalent CLI build (replace the device UDID with the one Xcode reports):
+
+```sh
+xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+  -destination 'id=YOUR_DEVICE_UDID' -derivedDataPath ios/DerivedData \
+  -allowProvisioningUpdates build
+xcrun devicectl device install app --device YOUR_DEVICE_UDID \
+  ios/DerivedData/Build/Products/Debug-iphoneos/App.app
+xcrun devicectl device process launch --device YOUR_DEVICE_UDID \
+  com.fireboydroid.redflagrush
+```
+
+Personal Team signing installs a development preview with a short-lived profile
+(normally seven days). Check the embedded profile's actual expiration; rebuild
+and reinstall after expiration. This does not enable TestFlight/App Store uploads.
+
+For App Store distribution, enrol in the Apple Developer Program, create the
+matching app in App Store Connect, configure the four non-consumable products,
+select the paid team in Xcode, and increment the build number for new uploads.
+Run `npm run release:check:ios`, sync, then **Product → Archive → Distribute App**.
+A command-line archive uses:
+
+```sh
+xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath ios/App/build/RedFlagRush.xcarchive \
+  -allowProvisioningUpdates archive
+```
+
+An archive signed by a Personal Team is a development artifact. App Store export
+requires distribution signing and the paid account. CI's unsigned Release compile
+checks source compatibility only. Framework privacy manifests are supplied by
+Capacitor/Google's Swift packages; review Xcode's generated privacy report and
+complete App Store privacy details for ads, purchases and multiplayer. The app
+uses standard platform networking/TLS and declares no non-exempt encryption.
 
 ## Party server for public multiplayer (optional)
 
@@ -142,3 +198,22 @@ PARTY_PORT=3000 PARTY_ALLOWED_ORIGINS=https://your-domain.com npm run start:part
 
 Deploy `dist/` to any static HTTPS host. The service worker gives offline solo play
 and Add-to-Home-Screen install.
+
+## Verified on this Mac (30 September 2026)
+
+- Web typecheck/build, 45 frontend unit tests and 11 server tests pass.
+- 22 solo/layout/offline browser checks and six multiplayer browser checks pass.
+- Xcode 26.6 compiled, development-signed, installed and launched the app on the
+  connected iPhone 15 (iOS 26.6.1); the WebView and native plugins loaded.
+  The installed development profile expires on 7 October 2026 at 14:56:59 UTC.
+- A signed Release archive was created at
+  `ios/App/build/RedFlagRush.xcarchive` using the development certificate;
+  App Store distribution signing is still required.
+- Android `lintRelease bundleRelease -PallowUnsignedRelease=true` compiles the
+  Release AAB with zero app lint errors (20 existing warnings, mostly template
+  resources/icons). The bundle contains no native `.so` libraries.
+- Production store readiness is pending: restore the Android upload key, supply
+  production AdMob app/unit IDs and publish UMP messages, configure/verify store
+  products and listings, select paid Apple distribution signing, and complete
+  real-device purchase/ad/multiplayer acceptance tests. A production HTTPS party
+  endpoint is needed for public multiplayer; users can enter their own endpoint.

@@ -69,7 +69,9 @@ export class PurchaseManager {
         if (id && product.priceString) this.prices.set(id, product.priceString);
       }
     } catch { /* Prices fall back to the configured defaults. */ }
-    await this.restore();
+    // Query current entitlements silently. StoreKit restore can prompt for an
+    // Apple ID, so it must only run after the user presses Restore purchases.
+    await this.refreshOwned();
   }
 
   /** Store round-trip: returns the pack ids granted (empty when cancelled/failed). */
@@ -91,6 +93,13 @@ export class PurchaseManager {
     if (!this.gateway) return [...this.owned];
     try {
       await this.gateway.restorePurchases();
+    } catch { /* Keep the locally cached entitlements. */ }
+    return this.refreshOwned();
+  }
+
+  private async refreshOwned(): Promise<string[]> {
+    if (!this.gateway) return [...this.owned];
+    try {
       const { purchases } = await this.gateway.getPurchases();
       for (const purchase of purchases) {
         if (purchase.productIdentifier) this.grant(purchase.productIdentifier);

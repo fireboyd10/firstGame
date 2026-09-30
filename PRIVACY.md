@@ -1,6 +1,10 @@
 # Privacy
 
-RED FLAG RUSH has no accounts, advertising, analytics, or tracking SDKs.
+RED FLAG RUSH has no game accounts or separate analytics service. The web/PWA has no ads or billing. Native Android and iOS builds include Google AdMob and store billing through Google Play or Apple StoreKit.
+
+Native builds can show interstitial ads between completed games. Device previews use Google's test ad units. Before requesting live ads, the app updates Google's User Messaging Platform (UMP) consent status and presents any required consent form. If UMP cannot authorize ad requests, gameplay continues without ads. Where required, **Ad privacy choices** in the footer lets you reopen the privacy form. Ad requests explicitly request non-personalized ads; the app does not request Apple's tracking authorization. Non-personalized ads still involve data processing: Google's SDK can process IP addresses, device information, diagnostics, and ad interactions. See [Google's advertising privacy information](https://policies.google.com/technologies/ads). Store privacy disclosures must include the SDK's applicable data practices.
+
+Premium topic packs are non-consumable purchases handled by the platform's store. Payment details stay with Apple or Google. The app queries product prices and purchase entitlements and caches unlocked packs on-device. **Restore purchases** asks the store to restore ownership. An ad-frequency counter is also stored on-device.
 
 Solo scores, tutorial state, and sound/vibration preferences stay in localStorage on your device. An optional service worker caches static game files for offline solo play. Clearing browser storage or uninstalling can remove these records.
 

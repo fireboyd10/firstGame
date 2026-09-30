@@ -81,7 +81,7 @@ app.innerHTML = `
       </section>
     </main>
     <div class="update-banner" id="update-banner" hidden><span>A fresh version is ready.</span><button data-action="update">Update & reload ${icon('arrow')}</button></div>
-    <footer class="footer"><span>Entertainment and reflection only — not clinical advice.</span><span class="offline-label" id="offline-status">NO ACCOUNTS. JUST INSTINCTS.</span></footer>
+    <footer class="footer"><span>Entertainment and reflection only — not clinical advice.</span><button class="text-button" data-action="ad-privacy" hidden>Ad privacy choices</button><span class="offline-label" id="offline-status">NO ACCOUNTS. JUST INSTINCTS.</span></footer>
     <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
     <dialog id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
     <div class="toast" id="toast" role="status" hidden></div>
@@ -119,7 +119,10 @@ const party = createPartyUi(el('#modal-content'), {
 const resetSwipe = bindSwipe(card, () => screen === 'game' && engine.state.phase === 'playing' && !modal.open, choose);
 // Ads and purchases: native apps only. Web keeps base content and stays ad-free.
 let ads: AdManager | null = null;
-void createAdManager().then((manager) => { ads = manager; });
+void createAdManager().then((manager) => {
+  ads = manager;
+  el('[data-action="ad-privacy"]').hidden = !manager.privacyOptionsRequired;
+});
 let purchaseManager: PurchaseManager = new PurchaseManager(null);
 let purchasesSettled = false;
 const purchasesReady: Promise<void> = createPurchaseManager().then((manager) => { purchaseManager = manager; purchasesSettled = true; });
@@ -391,6 +394,12 @@ app.addEventListener('click', (event) => {
     case 'close-shop': closeModal(); break;
     case 'buy-pack': void shopBuy(button.dataset.product!); break;
     case 'restore-purchases': void shopRestore(); break;
+    case 'ad-privacy':
+      void ads?.showPrivacyOptions().then((shown) => {
+        el('[data-action="ad-privacy"]').hidden = !ads?.privacyOptionsRequired;
+        if (!shown) toast('Privacy choices are unavailable. Please try again later.');
+      });
+      break;
     case 'mute': toggleSound(); break;
     case 'haptics':
       preferences = savePreferences({ haptics: !preferences.haptics });

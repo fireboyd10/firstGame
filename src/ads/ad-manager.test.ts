@@ -17,6 +17,9 @@ function fakeGateway(overrides: Partial<AdGateway> = {}): AdGateway & { calls: s
   return {
     calls,
     initialize: async () => { calls.push('initialize'); },
+    requestConsentInfo: async () => ({ status: 'NOT_REQUIRED', canRequestAds: true, privacyOptionsRequirementStatus: 'NOT_REQUIRED' }),
+    showConsentForm: async () => ({ status: 'OBTAINED', canRequestAds: true, privacyOptionsRequirementStatus: 'REQUIRED' }),
+    showPrivacyOptionsForm: async () => { calls.push('privacyOptions'); },
     prepareInterstitial: async () => { calls.push('prepareInterstitial'); },
     showInterstitial: async () => { calls.push('showInterstitial'); },
     ...overrides,
@@ -38,6 +41,47 @@ describe('interstitial placement policy', () => {
 });
 
 describe('AdManager', () => {
+  it('does not load live ads when consent is unavailable', async () => {
+    for (const requestConsentInfo of [
+      async () => ({ status: 'REQUIRED', canRequestAds: false, privacyOptionsRequirementStatus: 'REQUIRED' }),
+      async () => { throw new Error('offline'); },
+    ]) {
+      const gateway = fakeGateway({ requestConsentInfo });
+      const manager = new AdManager(gateway, units, AD_POLICY, () => 0);
+      expect(await manager.initialize(false)).toBe(false);
+      manager.recordGameCompleted();
+      expect(await manager.maybeShowInterstitial()).toBe(false);
+      expect(gateway.calls).toEqual(['initialize']);
+    }
+  });
+
+  it('gathers required consent before requesting non-personalized live ads', async () => {
+    const gateway = fakeGateway({
+      requestConsentInfo: async () => ({ status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: true, privacyOptionsRequirementStatus: 'REQUIRED' }),
+      prepareInterstitial: async (options) => { expect(options.npa).toBe(true); },
+    });
+    const manager = new AdManager(gateway, units, AD_POLICY, () => 0);
+    expect(await manager.initialize(false)).toBe(true);
+    expect(manager.privacyOptionsRequired).toBe(true);
+    manager.recordGameCompleted();
+    expect(await manager.maybeShowInterstitial()).toBe(true);
+  });
+
+  it('discards a prepared ad when privacy choices no longer permit requests', async () => {
+    let allowed = true;
+    const gateway = fakeGateway({
+      requestConsentInfo: async () => ({ status: 'OBTAINED', canRequestAds: allowed, privacyOptionsRequirementStatus: 'REQUIRED' }),
+      showPrivacyOptionsForm: async () => { allowed = false; },
+    });
+    const manager = new AdManager(gateway, units, AD_POLICY, () => 0);
+    await manager.initialize(false);
+    manager.recordGameCompleted();
+    await Promise.resolve();
+    expect(await manager.showPrivacyOptions()).toBe(true);
+    expect(await manager.maybeShowInterstitial()).toBe(false);
+    expect(gateway.calls).not.toContain('showInterstitial');
+  });
+
   it('is inert without a gateway (web/PWA stays ad-free)', async () => {
     const manager = new AdManager(null, units);
     expect(manager.adsAvailable).toBe(false);

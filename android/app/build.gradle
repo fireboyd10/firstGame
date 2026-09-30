@@ -1,12 +1,24 @@
 apply plugin: 'com.android.application'
 
 // Release signing. Secrets live in android/keystore.properties (gitignored).
-// Without that file the release build falls back to unsigned so CI still works.
+// CI can opt into unsigned verification with -PallowUnsignedRelease=true.
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file('keystore.properties')
 def hasSigning = keystorePropertiesFile.exists()
 if (hasSigning) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { key ->
+        if (!keystoreProperties[key]?.trim()) {
+            throw new GradleException("Missing ${key} in android/keystore.properties")
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    if (!hasSigning && !providers.gradleProperty('allowUnsignedRelease').map { it.toBoolean() }.getOrElse(false)
+        && graph.allTasks.any { it.project == project && it.name in ['packageRelease', 'packageReleaseBundle', 'bundleRelease', 'assembleRelease'] }) {
+        throw new GradleException('Release signing is missing. Restore android/keystore.properties and the existing upload keystore. For compile-only verification use -PallowUnsignedRelease=true; that artifact cannot be uploaded to Google Play.')
+    }
 }
 
 android {

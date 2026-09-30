@@ -9,8 +9,18 @@ import { AD_POLICY, adUnitsFor, usingTestAds, type AdPolicy, type AdUnitIds } fr
 /** Subset of @capacitor-community/admob used by the game. Injectable for tests. */
 export interface AdGateway {
   initialize(options?: { initializeForTesting?: boolean }): Promise<void>;
-  prepareInterstitial(options: { adId: string }): Promise<unknown>;
+  requestConsentInfo(): Promise<AdConsentInfo>;
+  showConsentForm(): Promise<AdConsentInfo>;
+  showPrivacyOptionsForm(): Promise<void>;
+  prepareInterstitial(options: { adId: string; npa: boolean }): Promise<unknown>;
   showInterstitial(): Promise<void>;
+}
+
+interface AdConsentInfo {
+  status: string;
+  canRequestAds: boolean;
+  isConsentFormAvailable?: boolean;
+  privacyOptionsRequirementStatus: string;
 }
 
 interface PersistedAdState {
@@ -57,6 +67,9 @@ export class AdManager {
   private completedGames: number;
   private nextInterstitialAtGame: number;
   private interstitialReady = false;
+  private consentAllowsAds = false;
+  private testing = false;
+  privacyOptionsRequired = false;
 
   constructor(
     private readonly gateway: AdGateway | null,
@@ -79,13 +92,44 @@ export class AdManager {
   get adsAvailable(): boolean { return this.gateway !== null; }
 
   async initialize(initializeForTesting: boolean): Promise<boolean> {
-    if (!this.gateway || this.initialized) return this.gateway !== null;
+    if (!this.gateway) return false;
+    if (this.initialized) return this.consentAllowsAds;
+    this.testing = initializeForTesting;
     try {
+      // This plugin binds the consent form's view controller in initialize().
+      // Initializing the SDK does not authorize our app to request an ad.
       await this.gateway.initialize({ initializeForTesting });
+      // Test units are for device previews. Live ads must wait for UMP, even
+      // when non-personalized ads are requested and ATT is never requested.
+      if (!this.testing) {
+        let consent = await this.gateway.requestConsentInfo();
+        this.privacyOptionsRequired = consent.privacyOptionsRequirementStatus === 'REQUIRED';
+        if (consent.status === 'REQUIRED' && consent.isConsentFormAvailable) {
+          consent = await this.gateway.showConsentForm();
+        }
+        this.privacyOptionsRequired = consent.privacyOptionsRequirementStatus === 'REQUIRED';
+        if (!consent.canRequestAds) return false;
+      }
+      this.consentAllowsAds = true;
       this.initialized = true;
       return true;
     } catch {
+      this.consentAllowsAds = false;
       return false; // No ad SDK (old WebView, no Play services) — play stays uninterrupted.
+    }
+  }
+
+  async showPrivacyOptions(): Promise<boolean> {
+    if (!this.gateway || !this.privacyOptionsRequired) return false;
+    this.consentAllowsAds = false;
+    this.interstitialReady = false;
+    this.initialized = false;
+    try {
+      await this.gateway.showPrivacyOptionsForm();
+      await this.initialize(this.testing);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -93,10 +137,10 @@ export class AdManager {
   recordGameCompleted(): void {
     this.completedGames++;
     this.persist();
-    if (this.gateway && this.initialized
+    if (this.gateway && this.initialized && this.consentAllowsAds
       && shouldShowInterstitial(this.completedGames, this.nextInterstitialAtGame)) {
       this.interstitialReady = false;
-      this.gateway.prepareInterstitial({ adId: this.units.interstitial })
+      this.gateway.prepareInterstitial({ adId: this.units.interstitial, npa: true })
         .then(() => { this.interstitialReady = true; })
         .catch(() => { this.interstitialReady = false; });
     }
@@ -107,10 +151,11 @@ export class AdManager {
    * finished party). Never blocks the transition; resolves false when no ad was shown.
    */
   async maybeShowInterstitial(): Promise<boolean> {
-    if (!this.gateway || !this.initialized) return false;
+    if (!this.gateway || !this.initialized || !this.consentAllowsAds) return false;
     if (!shouldShowInterstitial(this.completedGames, this.nextInterstitialAtGame)) return false;
     try {
-      if (!this.interstitialReady) await this.gateway.prepareInterstitial({ adId: this.units.interstitial });
+      if (!this.interstitialReady) await this.gateway.prepareInterstitial({ adId: this.units.interstitial, npa: true });
+      if (!this.consentAllowsAds) return false;
       await this.gateway.showInterstitial();
       this.nextInterstitialAtGame = nextInterstitialThreshold(this.completedGames, this.policy, this.random);
       this.interstitialReady = false;

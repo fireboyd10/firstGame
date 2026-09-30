@@ -1,0 +1,50 @@
+name: Android Build
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'server/**'
+      - 'scripts/**'
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'index.html'
+      - 'package*.json'
+      - '.github/workflows/android-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - run: npm test
+      - run: npm run mobile:sync:android
+      - name: Verify release bundle without private signing keys
+        working-directory: android
+        run: ./gradlew --no-daemon lintRelease bundleRelease -PallowUnsignedRelease=true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: red-flag-rush-android-unsigned
+          path: android/build/app/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 14

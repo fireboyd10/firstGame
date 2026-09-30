@@ -4,16 +4,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, resolve, sep } from 'node:path';
 import { chromium } from 'playwright-core';
-import ts from 'typescript';
 
 const project = resolve(import.meta.dirname, '..');
 const output = resolve(project, '.qa');
 const base = new URL(process.env.BASE_URL || 'http://127.0.0.1:4173/');
 await mkdir(output, { recursive: true });
-const compiled = ts.transpileModule(await readFile(resolve(project, 'src/data/scenarios.ts'), 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 },
-}).outputText;
-const { scenarios } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const scenarios = JSON.parse(await readFile(resolve(project, 'server/data/scenarios.json'), 'utf8'));
 const answers = new Map(scenarios.map((scenario) => [scenario.id, scenario.answer]));
 const report = { base: base.href, browser: '', startedAt: new Date().toISOString(), passed: [], screenshots: [], errors: [], status: 'running' };
 let browser;
@@ -106,14 +102,14 @@ async function readyForOffline(page) {
 
 try {
   const launchErrors = [];
-  for (const channel of process.env.BROWSER_CHANNEL ? [process.env.BROWSER_CHANNEL] : ['msedge', 'chrome']) {
+  for (const channel of process.env.BROWSER_CHANNEL ? [process.env.BROWSER_CHANNEL] : ['msedge', 'chrome', undefined]) {
     try {
       browser = await chromium.launch({ channel, headless: true });
-      report.browser = `${channel} ${browser.version()}`;
+      report.browser = `${channel ?? 'chromium'} ${browser.version()}`;
       break;
     } catch (error) { launchErrors.push(`${channel}: ${error.message}`); }
   }
-  if (!browser) throw new Error(`Install Edge or Chrome, or set BROWSER_CHANNEL.\n${launchErrors.join('\n')}`);
+  if (!browser) throw new Error(`Install Edge/Chrome or run npx playwright-core install chromium.\n${launchErrors.join('\n')}`);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
   const network = monitor(context, base.origin, 'main');
   const page = await timedPage(context);
@@ -124,21 +120,17 @@ try {
     await shot(page, 'tutorial-390x844');
     await page.locator('[data-action="begin"]').click();
     await visible(page, '#game');
-    assert.equal(await page.locator('#score').textContent(), '0');
-    assert.equal(await page.locator('#lives').getAttribute('aria-label'), '3 lives remaining');
+    assert.equal(await page.locator('#solo-progress').textContent(), '0 / 10');
   });
-  await check('Choice button scores once; repeated input is locked', async () => {
+  await check('Choice counts once; repeated input is locked', async () => {
     const answer = await answerFor(page);
     await page.locator(`[data-action="${answer}"]`).click();
-    const score = await page.locator('#score').textContent();
-    assert(Number(score.replaceAll(',', '')) > 0);
-    assert.equal(await page.locator('#streak').textContent(), '1');
+    assert.equal(await page.locator('#solo-progress').textContent(), '1 / 10');
     assert.equal(await page.locator('.choice-red').isDisabled(), true);
     assert.equal(await page.locator('.choice-green').isDisabled(), true);
-    await page.keyboard.press(answer === 'red' ? 'ArrowLeft' : 'ArrowRight');
-    await page.keyboard.press(answer === 'red' ? 'ArrowLeft' : 'ArrowRight');
-    assert.equal(await page.locator('#score').textContent(), score);
-    assert.equal(await page.locator('#streak').textContent(), '1');
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await page.locator('#solo-progress').textContent(), '1 / 10');
   });
   await nextCard(page);
   await check('Pointer snap-back and horizontal swipe', async () => {
@@ -156,27 +148,17 @@ try {
     await page.mouse.down();
     await page.mouse.move(x + (answer === 'red' ? -112 : 112), y, { steps: 8 });
     await page.mouse.up();
-    assert.equal(await page.locator('#streak').textContent(), '2');
+    assert.equal(await page.locator('#solo-progress').textContent(), '2 / 10');
     assert.equal(await page.locator('.choice-red').isDisabled(), true);
   });
   await nextCard(page);
-  await check('Keyboard choice, streak bonus, and both choice buttons', async () => {
-    const buttonColors = new Set();
-    for (let i = 0; i < 3; i++) {
-      const answer = await answerFor(page);
-      if (i === 0) await page.keyboard.press(answer === 'red' ? 'ArrowLeft' : 'ArrowRight');
-      else { await page.locator(`[data-action="${answer}"]`).click(); buttonColors.add(answer); }
-      if (i < 2) await nextCard(page);
-    }
-    assert.equal(await page.locator('#streak').textContent(), '5');
-    assert.match(await page.locator('#multiplier').textContent(), /2/);
-    for (let i = 0; buttonColors.size < 2 && i < 20; i++) {
-      await nextCard(page);
-      const answer = await answerFor(page);
-      await page.locator(`[data-action="${answer}"]`).click();
-      buttonColors.add(answer);
-    }
-    assert.equal(buttonColors.size, 2, 'Both red and green buttons exercised');
+  await check('Keyboard and both choice buttons accept personal preferences', async () => {
+    await page.keyboard.press('ArrowLeft');
+    await nextCard(page);
+    await page.locator('[data-action="green"]').click();
+    await nextCard(page);
+    await page.locator('[data-action="red"]').click();
+    assert.equal(await page.locator('#solo-progress').textContent(), '5 / 10');
   });
   await nextCard(page);
   await check('Pause freezes timer; Escape resumes', async () => {
@@ -207,25 +189,20 @@ try {
     await visible(page, '#modal[open]');
     await page.locator('[data-action="resume"]').click();
   });
-  await check('Wrong answers, timeout, and complete game over', async () => {
-    for (const remaining of [2, 1]) {
-      const answer = await answerFor(page);
-      await page.locator(`[data-action="${answer === 'red' ? 'green' : 'red'}"]`).click();
-      assert.equal(await page.locator('#lives').getAttribute('aria-label'), `${remaining} lives remaining`);
-      assert.equal(await page.locator('#streak').textContent(), '0');
-      await nextCard(page);
+  await check('Timer expiry allows a late answer; ten choices produce a verdict', async () => {
+    await page.clock.runFor(31000);
+    assert.equal(await page.locator('#solo-progress').textContent(), '5 / 10');
+    assert.equal(await page.locator('.choice-red').isEnabled(), true);
+    for (let i = 5; i < 10; i++) {
+      await page.locator(`[data-action="${i % 2 ? 'green' : 'red'}"]`).click();
+      await page.clock.runFor(2250);
     }
-    await page.clock.runFor(5100);
-    assert.equal(await page.locator('#lives').getAttribute('aria-label'), '0 lives remaining');
-    assert.match(await page.locator('#feedback').textContent(), /Time.s up/);
-    await page.clock.runFor(2250);
     await visible(page, '#results');
-    assert(Number((await page.locator('#final-score').textContent()).replaceAll(',', '')) > 0);
-    assert(Number(await page.locator('#best-streak').textContent()) >= 5);
-    assert.match(await page.locator('#accuracy').textContent(), /^\d+%$/);
+    assert.equal(await page.locator('#picks-made').textContent(), '10');
+    assert.match(await page.locator('#chaos-percent').textContent(), /^\d+%$/);
+    assert.match(await page.locator('#green-percent').textContent(), /^\d+%$/);
     await shot(page, 'results-390x844');
   });
-  const finalScore = await page.locator('#final-score').textContent();
   await check('Share clipboard and manual-copy fallbacks', async () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base.origin });
     await page.evaluate(() => Object.defineProperty(navigator, 'share', { configurable: true, value: undefined }));
@@ -239,22 +216,20 @@ try {
   await check('Replay and restart reset the run', async () => {
     await page.locator('[data-action="replay"]').click();
     await visible(page, '#game');
-    assert.equal(await page.locator('#score').textContent(), '0');
-    assert.equal(await page.locator('#lives').getAttribute('aria-label'), '3 lives remaining');
+    assert.equal(await page.locator('#solo-progress').textContent(), '0 / 10');
     const answer = await answerFor(page);
     await page.locator(`[data-action="${answer}"]`).click();
     await page.locator('.topbar [data-action="restart"]').click();
-    assert.equal(await page.locator('#score').textContent(), '0');
+    assert.equal(await page.locator('#solo-progress').textContent(), '0 / 10');
     assert.equal(await page.locator('.choice-red').isEnabled(), true);
   });
-  await check('Mute, tutorial state, high score persist; Space starts', async () => {
+  await check('Mute and tutorial state persist; Space starts', async () => {
     await page.locator('[data-action="mute"]').click();
     assert.equal(await page.locator('[data-action="mute"]').getAttribute('aria-pressed'), 'true');
     await page.reload({ waitUntil: 'load' });
     await visible(page, '#home');
     assert.equal(await page.locator('#modal').isVisible(), false);
     assert.equal(await page.locator('[data-action="mute"]').getAttribute('aria-pressed'), 'true');
-    assert.equal(await page.locator('#home-best').textContent(), finalScore);
     await page.evaluate(() => document.activeElement?.blur());
     await page.keyboard.press('Space');
     await visible(page, '#game');
@@ -283,7 +258,7 @@ try {
     });
   }
   await home(page);
-  await check('Every scenario and explanation fits the shortest phone', async () => {
+  await check('Every scenario fits the shortest phone', async () => {
     await page.setViewportSize({ width: 320, height: 568 });
     await page.locator('[data-action="start"]').click();
     for (const scenario of scenarios) {
@@ -291,7 +266,7 @@ try {
       await page.evaluate((card) => {
         document.querySelector('#scenario-text').textContent = card.text;
         document.querySelector('#scenario-card').classList.toggle('long-text', card.text.length > 110);
-        document.querySelector('#feedback p').textContent = card.explanation;
+        document.querySelector('#feedback p').textContent = 'Your choice is in.';
       }, scenario);
       await layout(page, ['#scenario-card', '#feedback', '.choice-red', '.choice-green']);
     }
@@ -330,7 +305,7 @@ try {
     await page.locator('[data-action="start"]').click();
     const answer = await answerFor(page);
     await page.locator(`[data-action="${answer}"]`).click();
-    assert.equal(await page.locator('#streak').textContent(), '1');
+    assert.equal(await page.locator('#solo-progress').textContent(), '1 / 10');
     await shot(page, 'offline-game');
     await context.setOffline(false);
     network.offline = false;
@@ -349,7 +324,7 @@ try {
     await fallbackPage.locator('[data-action="start"]').click();
     await fallbackPage.locator('[data-action="begin"]').click();
     await fallbackPage.locator(`[data-action="${await answerFor(fallbackPage)}"]`).click();
-    assert.equal(await fallbackPage.locator('#streak').textContent(), '1');
+    assert.equal(await fallbackPage.locator('#solo-progress').textContent(), '1 / 10');
     await fallbackPage.locator('[data-action="mute"]').click();
     assert.equal(await fallbackPage.locator('[data-action="mute"]').getAttribute('aria-pressed'), 'true');
     await fallback.close();
@@ -384,7 +359,7 @@ try {
     assert.equal(await nestedPage.evaluate(() => document.baseURI), nested.href);
     await nestedPage.locator('[data-action="start"]').click();
     await nestedPage.locator(`[data-action="${await answerFor(nestedPage)}"]`).click();
-    assert.equal(await nestedPage.locator('#streak').textContent(), '1');
+    assert.equal(await nestedPage.locator('#solo-progress').textContent(), '1 / 10');
     await shot(nestedPage, 'subpath-offline-game');
     await nestedContext.close();
     await new Promise((done) => fixtureServer.close(done));

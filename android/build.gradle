@@ -22,10 +22,11 @@ allprojects {
         google()
         mavenCentral()
     }
-    // This project lives in OneDrive, which locks build intermediates mid-sync.
-    // Keep all Gradle output on local disk instead (gitignored regardless).
-    // Override with -PbuildRoot=... if you prefer another location.
-    def buildRoot = project.findProperty('buildRoot') ?: "${System.getenv('LOCALAPPDATA') ?: '/tmp'}/red-flag-rush-build"
+    // Windows keeps output outside OneDrive; other platforms use ignored local output.
+    // Override with -PbuildRoot=/absolute/path when needed.
+    def buildRoot = project.findProperty('buildRoot') ?: (System.getenv('LOCALAPPDATA')
+        ? "${System.getenv('LOCALAPPDATA')}/red-flag-rush-build"
+        : rootProject.file('build').absolutePath)
     buildDir = "${buildRoot}/${project.name}"
 }
 

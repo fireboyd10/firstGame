@@ -22,6 +22,19 @@ function fakeGateway(overrides: Partial<PurchaseGateway> = {}): PurchaseGateway 
 }
 
 describe('PurchaseManager', () => {
+  it('refreshes owned packs silently on startup and restores only on explicit request', async () => {
+    let restores = 0;
+    const manager = new PurchaseManager(fakeGateway({
+      restorePurchases: async () => { restores++; },
+      getPurchases: async () => ({ purchases: [{ productIdentifier: PACKS[0]!.productId }] }),
+    }));
+    await manager.sync();
+    expect(restores).toBe(0);
+    expect(manager.owns(PACKS[0]!.packId)).toBe(true);
+    await manager.restore();
+    expect(restores).toBe(1);
+  });
+
   it('is base-content-only without a store (web/PWA)', async () => {
     const manager = new PurchaseManager(null);
     expect(manager.storeAvailable).toBe(false);

@@ -21,6 +21,8 @@
     "icons": "node scripts/generate-icons.mjs",
     "icons:native": "node scripts/generate-native-icons.mjs",
     "mobile:doctor": "node scripts/mobile.mjs doctor",
+    "release:check:android": "node scripts/check-release.mjs android",
+    "release:check:ios": "node scripts/check-release.mjs ios",
     "mobile:add:android": "node scripts/mobile.mjs add android",
     "mobile:add:ios": "node scripts/mobile.mjs add ios",
     "mobile:sync": "node scripts/mobile.mjs sync",
