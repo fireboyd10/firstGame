@@ -80,8 +80,8 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
                     }
                     self.queue.asyncAfter(deadline: .now() + 8) { connection.cancel(); self.connections.removeValue(forKey: id) }
                 }
-                queue.asyncAfter(deadline: .now() + 8, execute: timeout)
-                listener.start(queue: queue)
+                self.queue.asyncAfter(deadline: .now() + 8, execute: timeout)
+                listener.start(queue: self.queue)
             } catch { call.reject("Could not create a Wi-Fi room.") }
         }
     }
