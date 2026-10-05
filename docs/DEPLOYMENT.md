@@ -185,10 +185,15 @@ Capacitor/Google's Swift packages; review Xcode's generated privacy report and
 complete App Store privacy details for ads, purchases and multiplayer. The app
 uses standard platform networking/TLS and declares no non-exempt encryption.
 
-## Party server for public multiplayer (optional)
+## Party server for browser multiplayer (optional)
 
-LAN party works with zero setup (`npm run party`). Public internet play needs one
-hosted HTTPS server:
+Installed Android and iOS apps create and discover rooms directly on phones on
+the same Wi-Fi. Keep the original hosting phone in the game; no computer or
+public endpoint is needed. A network that isolates Wi-Fi clients cannot support
+this mode.
+
+For browser development, `npm run party` starts the existing computer server.
+Public internet play in the browser needs one hosted HTTPS server:
 
 ```sh
 npm run build && npm run build:server
@@ -197,10 +202,10 @@ PARTY_PORT=3000 PARTY_ALLOWED_ORIGINS=https://your-domain.com npm run start:part
 
 - `PARTY_PORT` — port to listen on (default 3000).
 - `PARTY_ALLOWED_ORIGINS` — comma-separated exact frontend origins allowed to call the API.
-- `VITE_PARTY_SERVER_URL` — build-time client default so the app points at your server
+- `VITE_PARTY_SERVER_URL` — build-time browser default so it points at your server
   without typing it under "Wi-Fi connection".
 - Put it behind HTTPS (Caddy/nginx/Cloudflare or a platform like Fly.io/Render).
-  Release builds on Android and iOS require HTTPS — plain LAN HTTP only works in debug builds.
+  The native phone-to-phone transport is independent of this browser HTTP endpoint.
 - Room state is in memory: run exactly one instance. Scaling beyond that needs a shared
   room store (not implemented).
 
@@ -209,7 +214,10 @@ PARTY_PORT=3000 PARTY_ALLOWED_ORIGINS=https://your-domain.com npm run start:part
 Deploy `dist/` to any static HTTPS host. The service worker gives offline solo play
 and Add-to-Home-Screen install.
 
-## Verified on this Mac (30 September 2026)
+## Earlier Mac validation (30 September 2026)
+
+These device/signing results predate phone-hosted parties. Validate the new LAN
+mode on physical Android/iOS devices separately.
 
 - Web typecheck/build, 45 frontend unit tests and 11 server tests pass.
 - 22 solo/layout/offline browser checks and six multiplayer browser checks pass.
@@ -225,5 +233,21 @@ and Add-to-Home-Screen install.
 - Production store readiness is pending: restore the Android upload key, supply
   production AdMob app/unit IDs and publish UMP messages, configure/verify store
   products and listings, select paid Apple distribution signing, and complete
-  real-device purchase/ad/multiplayer acceptance tests. A production HTTPS party
-  endpoint is needed for public multiplayer; users can enter their own endpoint.
+  real-device purchase/ad/multiplayer acceptance tests. Public browser multiplayer
+  needs a production HTTPS endpoint. Native LAN parties use the hosting phone.
+
+## Phone-hosted Android release (5 October 2026)
+
+- Version 1.0.1 / Android versionCode 2 keeps `com.fireboydroid.redflagrush`, the
+  existing upload keystore, AdMob configuration and purchase product IDs.
+- Typecheck, 56 frontend/shared-engine tests and 11 server tests pass.
+- 23 solo/layout/offline browser checks, six browser party checks and four ad
+  placement checks pass.
+- Two installed Android emulator apps discover a room by code over shared Wi-Fi,
+  play a full match, reconnect, replay, and release the empty room's listener.
+- Three native transport tests and Android `lintRelease bundleRelease` pass.
+  The local release AAB is signed; private signing files remain ignored.
+- The iOS phone-host implementation compiles in the macOS CI unsigned Release
+  build. This does not establish physical iPhone or mixed-platform runtime results.
+- Store review still needs access to premium topic packs, plus the existing
+  account/product/consent configuration and physical-device acceptance tests.

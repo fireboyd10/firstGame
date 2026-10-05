@@ -88,7 +88,7 @@ Use one server process and one address for the whole party. Development and prev
 
 Solo presents ten scenarios and reports your Taste for Chaos and Green Flag Appreciation. The 30-second countdown never forces an answer or changes your verdict. Sound is synthesized locally; settings remain on the device. Switching apps pauses solo play until you resume. Neutral illustrations do not indicate the answer.
 
-For offline solo play, deploy `dist/` to static HTTPS hosting and install from the browser's Add to Home Screen menu. The service worker caches only build assets. Updates wait until you choose to reload; room API responses are never cached. Ordinary LAN HTTP is enough for party play, but does not enable PWA installation/offline caching on phones. Multiplayer always needs a running, reachable party server.
+For offline solo play, deploy `dist/` to static HTTPS hosting and install from the browser's Add to Home Screen menu. The service worker caches only build assets. Updates wait until you choose to reload; room API responses are never cached. Ordinary LAN HTTP is enough for browser party play, but does not enable PWA installation/offline caching on phones. Browser multiplayer needs a running, reachable party server; installed apps host rooms directly on the first phone.
 
 ## Native builds and release preparation
 
