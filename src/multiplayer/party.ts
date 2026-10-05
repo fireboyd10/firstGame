@@ -1,5 +1,4 @@
 import { isNativePlatform } from '../platform/native';
-import { CapacitorHttp } from '@capacitor/core';
 import type { PartyTaste } from './personality';
 import { PhoneParty, hostPhoneRoom, requestPhoneRoom, type PhoneEndpoint } from './phone-host';
 
@@ -36,20 +35,21 @@ export function normalizePartyUrl(value: string): string {
   return url.origin;
 }
 
+export function verifyPhoneIdentity(endpoint: PhoneEndpoint, code: string): PhoneEndpoint {
+  const securityCode = code.replace(/[\s-]/g, '').toLowerCase();
+  if (!/^[0-9a-f]{12}$/.test(securityCode)) throw new Error('Enter the security code displayed on the host phone.');
+  if (!/^[0-9a-f]{64}$/.test(endpoint.fingerprint) || endpoint.fingerprint.slice(0, 12) !== securityCode) {
+    throw new Error('The security code does not match this host. Check the code on your friend\'s phone.');
+  }
+  return endpoint;
+}
+
 async function request<T>(baseUrl: string, path: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 8000);
   try {
     if (isNativePlatform()) {
-      const response = await CapacitorHttp.request({
-        url: `${baseUrl}${path}`, method: init.method || 'GET',
-        headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers } as Record<string, string>,
-        ...(init.body ? { data: JSON.parse(String(init.body)) } : {}),
-        connectTimeout: 8000, readTimeout: 8000, responseType: 'json',
-      });
-      if (!response.data || typeof response.data !== 'object') throw new PartyRequestError('No party server at this address. Check the address printed by npm.cmd run party.');
-      if (response.status < 200 || response.status >= 300) throw new PartyRequestError(response.data.error || 'The room could not be reached.', response.status);
-      return response.data as T;
+      throw new PartyRequestError('This saved room uses an older connection. Create or join a secure phone room again.');
     }
     const response = await fetch(`${baseUrl}${path}`, {
       ...init, signal: controller.signal, cache: 'no-store',
@@ -67,20 +67,23 @@ async function request<T>(baseUrl: string, path: string, init: RequestInit = {})
   } finally { window.clearTimeout(timer); }
 }
 
-export async function enterParty(baseUrl: string, name: string, code?: string, totalRounds = 10, theme = 'everyone', categories?: string[]): Promise<PartySession> {
+export async function enterParty(baseUrl: string, name: string, code?: string, totalRounds = 10, theme = 'everyone', categories?: string[], securityCode = ''): Promise<PartySession> {
   if (isNativePlatform()) {
     try {
       if (!code) {
         const created = await hostPhoneRoom({ name, totalRounds, theme, categories });
-        return { code: created.code, token: created.token, playerId: created.playerId, name, baseUrl: `phone://${created.code}`, phone: created.endpoint, hosting: true, joinUrl: `http://${created.endpoint.host}:${created.endpoint.port}` };
+        return { code: created.code, token: created.token, playerId: created.playerId, name, baseUrl: `phone://${created.code}`, phone: created.endpoint, hosting: true, joinUrl: `https://${created.endpoint.host}:${created.endpoint.port}` };
       }
       let endpoint: PhoneEndpoint;
+      const pinCode = securityCode.replace(/[\s-]/g, '').toLowerCase();
+      if (!/^[0-9a-f]{12}$/.test(pinCode)) throw new Error('Enter the security code displayed on the host phone.');
       if (baseUrl) {
         const address = new URL(normalizePartyUrl(baseUrl));
         const host = address.hostname.replace(/^\[|\]$/g, '');
         if (!address.port || !/^[0-9a-fA-F:.%]+$/.test(host)) throw new Error('Use the connection address shown on the host phone.');
-        endpoint = { host, port: Number(address.port) };
+        endpoint = await PhoneParty.inspectHost({ host, port: Number(address.port), securityCode: pinCode });
       } else endpoint = await PhoneParty.discover({ code });
+      verifyPhoneIdentity(endpoint, pinCode);
       const reply = await requestPhoneRoom(endpoint, code, { method: 'POST', path: `/api/rooms/${code}/join`, body: { name } });
       const data = reply.data as { code: string; token: string; playerId: string; error?: string };
       if (reply.status !== 200) throw new PartyRequestError(data.error || 'Could not join this room.', reply.status);

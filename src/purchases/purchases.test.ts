@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { PurchaseManager, type PurchaseGateway } from './purchases';
 import { BUNDLE_PRODUCT_ID, PACKS } from './products';
 import { BASE_CATEGORIES, PACK_CATEGORY } from '../data/scenario-bank';
+import { ReviewAccess } from './review-access';
 
 // Node has no localStorage — polyfill so entitlement caching is testable.
 const memoryStore = new Map<string, string>();
@@ -96,5 +97,43 @@ describe('pack catalogue', () => {
   it('every pack maps to a real scenario-bank category', () => {
     for (const pack of PACKS) expect(PACK_CATEGORY[pack.packId]).toBeTruthy();
     expect(PACKS).toHaveLength(3);
+  });
+});
+
+describe('review access stays separate from paid ownership', () => {
+  it('unlocks every topic offline without calling billing or persisting a purchase', async () => {
+    let payments = 0;
+    const code = 'A'.repeat(24);
+    const review = new ReviewAccess(true, async candidate => candidate === code);
+    const manager = new PurchaseManager(fakeGateway({ purchaseProduct: async () => { payments++; throw new Error('must never charge a reviewer'); } }), review);
+    expect(await review.activate('invalid')).toBe(false);
+    expect(manager.unlockedCategories(BASE_CATEGORIES)).toEqual([...BASE_CATEGORIES]);
+    expect(await review.activate('B'.repeat(24))).toBe(false);
+    expect(await review.activate(code)).toBe(true);
+    expect(manager.unlockedCategories(BASE_CATEGORIES)).toHaveLength(BASE_CATEGORIES.length + PACKS.length);
+    expect(await manager.buy(BUNDLE_PRODUCT_ID)).toEqual([]);
+    expect(payments).toBe(0); expect(memoryStore.size).toBe(0);
+    // An async billing bootstrap may replace the manager; the session's review access survives.
+    expect(new PurchaseManager(null, review).owns(PACKS[0].packId)).toBe(true);
+    review.exit();
+    expect(manager.unlockedCategories(BASE_CATEGORIES)).toEqual([...BASE_CATEGORIES]);
+    expect(memoryStore.size).toBe(0);
+  });
+  it('does not enable review access on the web and keeps real purchases after review exits', async () => {
+    const web = new ReviewAccess(false, async () => true);
+    expect(await web.activate('A'.repeat(24))).toBe(false);
+    const review = new ReviewAccess(true, async () => true);
+    const manager = new PurchaseManager(fakeGateway(), review);
+    await manager.buy(PACKS[1].productId);
+    const ownedBefore = memoryStore.get('red-flag-rush.packs.v1');
+    await review.activate('A'.repeat(24)); review.exit();
+    expect(manager.owns(PACKS[1].packId)).toBe(true);
+    expect(manager.owns(PACKS[0].packId)).toBe(false);
+    expect(memoryStore.get('red-flag-rush.packs.v1')).toBe(ownedBefore);
+  });
+  it('leaves access locked if code verification is unavailable', async () => {
+    const review = new ReviewAccess(true, async () => { throw new Error('plugin unavailable'); });
+    expect(await review.activate('A'.repeat(24))).toBe(false);
+    expect(review.active).toBe(false);
   });
 });

@@ -18,6 +18,8 @@ on:
       - 'server/**'
       - 'scripts/**'
       - 'ios/**'
+      - 'android/app/src/main/java/**'
+      - 'vitest.config.ts'
       - 'capacitor.config.ts'
       - 'vite.config.ts'
       - 'tsconfig.json'
@@ -39,11 +41,24 @@ jobs:
           node-version: 24
           cache: npm
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
       - name: Install dependencies
         run: npm ci
 
       - name: Typecheck and test
         run: npm test
+
+      - name: Verify native party TLS identity and certificate pinning
+        run: |
+          mkdir -p "$RUNNER_TEMP/party-tls-java"
+          javac -d "$RUNNER_TEMP/party-tls-java" android/app/src/main/java/com/fireboydroid/redflagrush/LanTls.java android/app/src/main/java/com/fireboydroid/redflagrush/LanSocketServer.java scripts/PartyTlsInterop.java
+          keytool -genkeypair -alias room -keyalg EC -groupname secp256r1 -sigalg SHA256withECDSA -dname 'CN=Temporary Party Test' -validity 1 -storetype PKCS12 -keystore "$RUNNER_TEMP/party-test.p12" -storepass temporary-test-only -noprompt
+          swiftc ios/App/App/PartyTLSIdentity.swift scripts/ios-party-tls-check.swift -o "$RUNNER_TEMP/party-tls-check"
+          "$RUNNER_TEMP/party-tls-check" "$RUNNER_TEMP/party-tls-java" "$RUNNER_TEMP/party-test.p12"
 
       - name: Build web app and sync iOS project
         run: npm run mobile:sync:ios

@@ -11,11 +11,14 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
         CAPPluginMethod(name: "startHost", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopHost", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "discover", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "inspectHost", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "reply", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "reply", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "sha256", returnType: CAPPluginReturnPromise)
     ]
     private let queue = DispatchQueue(label: "RedFlagRush.party")
     private var listener: NWListener?
+    private var roomIdentity: PartyTLSIdentity?
     private var pending: [String: NWConnection] = [:]
     private var connections: [UUID: NWConnection] = [:]
     private var browser: NetServiceBrowser?
@@ -31,10 +34,12 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
         queue.async {
             self.stopListener()
             do {
-                let parameters = NWParameters.tcp
-                parameters.requiredInterfaceType = .wifi
+                let identity = try PartyTLSIdentity()
+                self.roomIdentity = identity
+                let parameters = try identity.serverParameters()
                 let listener = try NWListener(using: parameters, on: .any)
-                listener.service = NWListener.Service(name: "RFR-" + code, type: "_redflagrush._tcp")
+                let txt = NetService.data(fromTXTRecord: ["version": Data("3".utf8), "fingerprint": Data(identity.fingerprint.utf8), "code": Data(code.utf8)])
+                listener.service = NWListener.Service(name: "RFR-" + code, type: "_redflagrush._tcp", txtRecord: txt)
                 self.listener = listener
                 var completed = false
                 let timeout = DispatchWorkItem {
@@ -51,7 +56,7 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
                             self.previousIdleTimer = UIApplication.shared.isIdleTimerDisabled
                             self.hosting = true; UIApplication.shared.isIdleTimerDisabled = true
                         }
-                        call.resolve(["host": host, "port": Int(port.rawValue)])
+                        call.resolve(["host": host, "port": Int(port.rawValue), "fingerprint": identity.fingerprint])
                     case .failed:
                         completed = true; timeout.cancel(); self.stopListener(); call.reject("Cannot share the room. Check Wi-Fi and Local Network access in Settings.")
                     default: break
@@ -82,7 +87,7 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
                 }
                 self.queue.asyncAfter(deadline: .now() + 8, execute: timeout)
                 listener.start(queue: self.queue)
-            } catch { call.reject("Could not create a Wi-Fi room.") }
+            } catch { self.stopListener(); call.reject("Could not create a secure Wi-Fi room.") }
         }
     }
     private func stopListener() {
@@ -90,11 +95,17 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
         listener?.cancel(); listener = nil
         for connection in connections.values { connection.stateUpdateHandler = nil; connection.cancel() }
         connections.removeAll(); pending.removeAll()
+        roomIdentity = nil
         DispatchQueue.main.async {
             if self.hosting { UIApplication.shared.isIdleTimerDisabled = self.previousIdleTimer; self.hosting = false }
         }
     }
     @objc func stopHost(_ call: CAPPluginCall) { queue.async { self.stopListener(); call.resolve() } }
+    @objc func sha256(_ call: CAPPluginCall) {
+        let value = call.getString("value") ?? ""
+        guard value.count <= 64 else { call.reject("Input too long."); return }
+        call.resolve(["digest": PartyTLSIdentity.digest(Data(value.utf8))])
+    }
     @objc func reply(_ call: CAPPluginCall) {
         guard let id = call.getString("id") else { call.reject("Missing request ID."); return }
         let value: [String: Any] = ["status": call.getInt("status") ?? 500, "data": call.getObject("data") ?? [:]]
@@ -119,13 +130,12 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
         let request: [String: Any] = ["method": call.getString("method") ?? "GET", "path": call.getString("path") ?? "", "token": call.getString("token") ?? "", "body": call.getObject("body") ?? [:]]
         guard var data = try? JSONSerialization.data(withJSONObject: request), data.count <= 65536 else { call.reject("Invalid room request."); return }; data.append(10)
         queue.async {
-            let parameters = NWParameters.tcp
-            parameters.requiredInterfaceType = .wifi
+            guard let parameters = try? PartyTLSIdentity.clientParameters(pin: call.getString("fingerprint") ?? "", queue: self.queue) else { call.reject("Missing verified room identity. Join again with the host's security code."); return }
             let connection = NWConnection(host: NWEndpoint.Host(host), port: tcpPort, using: parameters)
             var completed = false
             let fail = {
                 guard !completed else { return }; completed = true; connection.stateUpdateHandler = nil; connection.cancel()
-                call.reject("Cannot reach the host phone. Keep its game open, use the same Wi-Fi, and allow Local Network access in Settings.")
+                call.reject("Secure connection failed. Check Wi-Fi and the host's security code. Rejoin if the host restarted the room.")
             }
             connection.stateUpdateHandler = { state in
                 if case .failed = state { fail() }
@@ -136,6 +146,31 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
                         guard let result = try? JSONSerialization.jsonObject(with: response) as? [String: Any] else { fail(); return }
                         completed = true; connection.stateUpdateHandler = nil; connection.cancel(); call.resolve(result)
                     }
+                }
+            }
+            self.queue.asyncAfter(deadline: .now() + 8) { fail() }
+            connection.start(queue: self.queue)
+        }
+    }
+    @objc func inspectHost(_ call: CAPPluginCall) {
+        guard let host = call.getString("host"), let port = call.getInt("port"), port > 0 && port <= 65535,
+              let tcpPort = NWEndpoint.Port(rawValue: UInt16(port)), isLocalAddress(host) else { call.reject("Use the host's local Wi-Fi address."); return }
+        queue.async {
+            var fingerprint = ""
+            guard let parameters = try? PartyTLSIdentity.clientParameters(pin: call.getString("securityCode") ?? "", queue: self.queue, pairingProbe: true,
+                                                                          verified: { fingerprint = $0 }) else { call.reject("Enter the security code shown on the host phone."); return }
+            let connection = NWConnection(host: NWEndpoint.Host(host), port: tcpPort, using: parameters)
+            var completed = false
+            let fail = {
+                guard !completed else { return }; completed = true; connection.stateUpdateHandler = nil; connection.cancel()
+                call.reject("Cannot verify this host. Check its security code, Wi-Fi and Local Network access.")
+            }
+            connection.stateUpdateHandler = { state in
+                if case .failed = state { fail() }
+                if case .ready = state {
+                    guard !completed, !fingerprint.isEmpty else { fail(); return }
+                    completed = true; connection.stateUpdateHandler = nil; connection.cancel()
+                    call.resolve(["host": host, "port": port, "fingerprint": fingerprint])
                 }
             }
             self.queue.asyncAfter(deadline: .now() + 8) { fail() }
@@ -160,6 +195,10 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
     }
     public func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) { finishSearch(nil, error: "Cannot search Wi-Fi. Allow Local Network access in Settings.") }
     public func netServiceDidResolveAddress(_ service: NetService) {
+        guard let data = service.txtRecordData() else { return }
+        let txt = NetService.dictionary(fromTXTRecord: data)
+        guard txt["version"] == Data("3".utf8), let pinData = txt["fingerprint"],
+              let fingerprint = String(data: pinData, encoding: .utf8), fingerprint.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else { return }
         let addresses = service.addresses ?? []
         for family in [Int32(AF_INET), Int32(AF_INET6)] {
             for data in addresses {
@@ -169,7 +208,7 @@ public class PhonePartyPlugin: CAPPlugin, CAPBridgedPlugin, NetServiceBrowserDel
                     guard getnameinfo(pointer, socklen_t(data.count), &name, socklen_t(name.count), nil, 0, NI_NUMERICHOST) == 0 else { return nil }
                     return String(cString: name)
                 }
-                if let host = host, isLocalAddress(host) { finishSearch(["host": host, "port": service.port], error: nil); return }
+                if let host = host, isLocalAddress(host) { finishSearch(["host": host, "port": service.port, "fingerprint": fingerprint], error: nil); return }
             }
         }
     }

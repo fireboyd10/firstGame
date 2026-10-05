@@ -227,10 +227,13 @@ function showShop(): void {
       : storeMissing
         ? '<p class="modal-description">The store is unavailable on this device right now. Purchases need Google Play or the App Store.</p>'
         : '<p class="modal-description">Purchases happen in the Android/iOS app. Grab it to unlock these decks.</p>';
+  const review = !store.review.available ? '' : store.review.active
+    ? '<p class="modal-description" role="status">Review access is active. Every topic is available for this session; no purchase is recorded.</p><button class="text-button" data-action="review-exit">Exit review access</button>'
+    : '<details class="party-connection"><summary>Review access</summary><p>Store reviewers can use their supplied code to inspect every topic without purchasing.</p><label class="field-label" for="review-code">Review code</label><input class="party-input" id="review-code" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="secondary-button" data-action="review-activate">Activate review access</button><p id="review-error" class="party-error" role="alert" hidden></p></details>';
   el('#modal-content').innerHTML = `<div class="modal-heading"><span class="eyebrow">SPICIER DECKS</span><button class="icon-button" data-action="close-shop" aria-label="Close shop">${icon('cross')}</button></div><h2 id="modal-title">New topics.<br><em>New arguments.</em></h2><p class="modal-description">One small unlock each, yours forever, on every device with your store account. Owned topics join solo runs automatically and can be toggled for party rooms.</p>
     ${PACKS.map((pack) => packRow(pack.packId, pack.title, pack.tagline, pack.productId, pack.fallbackPrice)).join('')}
     ${PACKS.every((pack) => store.owns(pack.packId)) ? '' : `<div class="pack-row pack-row-bundle"><div><strong>${BUNDLE_TITLE}</strong><span>Every current pack, one price.</span></div>${bundleAction}</div>`}
-    ${footer}`;
+    ${footer}${review}`;
   if (!modal.open) modal.showModal();
   if (storePending) void purchasesReady.then(() => { if (modal.open && modalKind === 'shop') showShop(); });
 }
@@ -246,6 +249,14 @@ async function shopRestore(): Promise<void> {
   const restored = await purchaseManager.restore();
   toast(restored.length ? `Restored: ${restored.map((id) => PACKS.find((pack) => pack.packId === id)?.title ?? id).join(', ')}.` : 'Nothing to restore on this store account.');
   if (modalKind === 'shop') showShop();
+}
+async function activateReview(): Promise<void> {
+  const input = el<HTMLInputElement>('#review-code');
+  const button = el<HTMLButtonElement>('[data-action="review-activate"]');
+  button.disabled = true;
+  if (await purchaseManager.review.activate(input.value)) { showShop(); return; }
+  button.disabled = false;
+  el('#review-error').hidden = false; el('#review-error').textContent = 'Invalid review code. Check the instructions supplied for this app.';
 }
 function showTutorial(): void {
   if (screen === 'game') return;
@@ -429,6 +440,8 @@ app.addEventListener('click', (event) => {
     case 'close-privacy': closePrivacy(); break;
     case 'buy-pack': void shopBuy(button.dataset.product!); break;
     case 'restore-purchases': void shopRestore(); break;
+    case 'review-activate': void activateReview(); break;
+    case 'review-exit': purchaseManager.review.exit(); showShop(); break;
     case 'ad-privacy':
       void ads?.showPrivacyOptions().then((shown) => {
         el('[data-action="ad-privacy"]').hidden = !ads?.privacyOptionsRequired;

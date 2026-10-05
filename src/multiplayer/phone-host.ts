@@ -2,13 +2,15 @@ import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { RoomService, RateLimiter, RoomError } from '../../server/rooms.mjs';
 import { partyScenarios } from '../data/party-scenarios';
 
-export interface PhoneEndpoint { host: string; port: number; }
+export interface PhoneEndpoint { host: string; port: number; fingerprint: string; }
 interface PhoneRequest { id?: string; peer?: string; method: string; path: string; token?: string; body?: object; }
 interface Reply { status: number; data: unknown; }
 export interface PhonePartyPlugin {
   startHost(options: { code: string }): Promise<PhoneEndpoint>;
   stopHost(): Promise<void>;
   discover(options: { code: string }): Promise<PhoneEndpoint>;
+  inspectHost(options: { host: string; port: number; securityCode: string }): Promise<PhoneEndpoint>;
+  sha256(options: { value: string }): Promise<{ digest: string }>;
   request(options: PhoneEndpoint & PhoneRequest): Promise<Reply>;
   reply(options: Reply & { id: string }): Promise<void>;
   addListener(event: 'request', listener: (request: PhoneRequest) => void): Promise<PluginListenerHandle>;

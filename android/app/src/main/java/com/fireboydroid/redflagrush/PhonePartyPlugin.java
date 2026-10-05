@@ -14,6 +14,7 @@ import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.nio.charset.StandardCharsets;
 
 @CapacitorPlugin(name = "PhoneParty")
 public class PhonePartyPlugin extends Plugin {
@@ -22,6 +23,7 @@ public class PhonePartyPlugin extends Plugin {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Map<String, CompletableFuture<String>> pending = new ConcurrentHashMap<>();
     private LanSocketServer server;
+    private RoomTlsIdentity identity;
     private NsdManager.RegistrationListener registration;
     private NsdManager.DiscoveryListener discovery;
     private Runnable discoveryTimeout;
@@ -55,7 +57,9 @@ public class PhonePartyPlugin extends Plugin {
             try {
                 stopServer();
                 InetAddress address = wifiAddress();
-                server = new LanSocketServer(address, (text, peer) -> {
+                identity = new RoomTlsIdentity();
+                final String fingerprint = identity.fingerprint;
+                server = new LanSocketServer(address, identity.context, (text, peer) -> {
                     CompletableFuture<String> result = new CompletableFuture<>();
                     String id = UUID.randomUUID().toString();
                     try {
@@ -79,14 +83,14 @@ public class PhonePartyPlugin extends Plugin {
                         call.reject("Could not share the room on Wi-Fi. Reconnect Wi-Fi and try again.");
                     };
                     NsdServiceInfo info = new NsdServiceInfo(); info.setServiceName("RFR-" + code); info.setServiceType(TYPE); info.setPort(port);
-                    info.setAttribute("code", code); info.setAttribute("version", "2");
+                    info.setAttribute("code", code); info.setAttribute("version", "3"); info.setAttribute("fingerprint", fingerprint);
                     registration = new NsdManager.RegistrationListener() {
                         public void onServiceRegistered(NsdServiceInfo service) {
                             main.post(() -> {
                                 if (!completed.compareAndSet(false, true)) return;
                                 main.removeCallbacks(timeout);
                                 getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                                JSObject endpoint = new JSObject(); endpoint.put("host", address.getHostAddress()); endpoint.put("port", port); call.resolve(endpoint);
+                                JSObject endpoint = new JSObject(); endpoint.put("host", address.getHostAddress()); endpoint.put("port", port); endpoint.put("fingerprint", fingerprint); call.resolve(endpoint);
                             });
                         }
                         public void onRegistrationFailed(NsdServiceInfo service, int error) { main.post(timeout); }
@@ -102,6 +106,7 @@ public class PhonePartyPlugin extends Plugin {
     }
     private synchronized void stopServer() {
         if (server != null) { try { server.close(); } catch (Exception ignored) {} server = null; }
+        if (identity != null) { identity.close(); identity = null; }
         for (CompletableFuture<String> reply : pending.values()) reply.completeExceptionally(new IllegalStateException("Room closed."));
         pending.clear();
         NsdManager.RegistrationListener previous = registration; registration = null;
@@ -111,6 +116,16 @@ public class PhonePartyPlugin extends Plugin {
         });
     }
     @PluginMethod public void stopHost(PluginCall call) { io.execute(() -> { stopServer(); call.resolve(); }); }
+    @PluginMethod public void sha256(PluginCall call) {
+        String value = call.getString("value", "");
+        if (value.length() > 64) { call.reject("Input too long."); return; }
+        try {
+            byte[] bytes = java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder digest = new StringBuilder(64);
+            for (byte item : bytes) digest.append(String.format(Locale.ROOT, "%02x", item & 255));
+            JSObject result = new JSObject(); result.put("digest", digest.toString()); call.resolve(result);
+        } catch (Exception error) { call.reject("Cannot verify review access."); }
+    }
     @PluginMethod public void reply(PluginCall call) {
         CompletableFuture<String> response = pending.remove(call.getString("id", ""));
         if (response != null) {
@@ -127,8 +142,19 @@ public class PhonePartyPlugin extends Plugin {
                 JSONObject request = new JSONObject(); request.put("method", call.getString("method", "GET")); request.put("path", call.getString("path", ""));
                 request.put("token", call.getString("token", "")); request.put("body", call.getObject("body", new JSObject()));
                 Socket socket = wifiNetwork().getSocketFactory().createSocket();
-                call.resolve(JSObject.fromJSONObject(new JSONObject(LanSocketServer.request(InetAddress.getByName(host), port, request.toString(), socket))));
-            } catch (Exception error) { call.reject("Cannot reach the host phone. Keep its game open and connect both phones to the same Wi-Fi."); }
+                call.resolve(JSObject.fromJSONObject(new JSONObject(LanSocketServer.request(InetAddress.getByName(host), port, request.toString(), call.getString("fingerprint", ""), socket))));
+            } catch (Exception error) { call.reject("Secure connection failed. Check Wi-Fi and the host's security code. Rejoin if the host restarted the room."); }
+        });
+    }
+    @PluginMethod public void inspectHost(PluginCall call) {
+        String host = call.getString("host", ""); int port = call.getInt("port", 0);
+        String securityCode = call.getString("securityCode", "");
+        if (!host.matches("[0-9a-fA-F:.%]+") || !securityCode.matches("[0-9a-f]{12}")) { call.reject("Enter the host's connection address and security code."); return; }
+        io.execute(() -> {
+            try {
+                String pin = LanTls.inspect(InetAddress.getByName(host), port, securityCode, wifiNetwork().getSocketFactory().createSocket());
+                JSObject endpoint = new JSObject(); endpoint.put("host", host); endpoint.put("port", port); endpoint.put("fingerprint", pin); call.resolve(endpoint);
+            } catch (Exception error) { call.reject("Cannot verify this host. Check the security code on the host phone and use the same Wi-Fi."); }
         });
     }
     @PluginMethod public void discover(PluginCall call) {
@@ -166,9 +192,14 @@ public class PhonePartyPlugin extends Plugin {
                 if (generation != searchGeneration || discovering == null) return;
                 resolving = false;
                 InetAddress address = service.getHost();
+                byte[] pinBytes = service.getAttributes().get("fingerprint");
+                byte[] versionBytes = service.getAttributes().get("version");
+                String pin = pinBytes == null ? "" : new String(pinBytes, StandardCharsets.US_ASCII);
+                String version = versionBytes == null ? "" : new String(versionBytes, StandardCharsets.US_ASCII);
+                if (!version.equals("3") || !pin.matches("[0-9a-f]{64}")) { resolveNext(); return; }
                 if (Build.VERSION.SDK_INT >= 34) for (InetAddress candidate : service.getHostAddresses()) if (candidate instanceof Inet4Address) { address = candidate; break; }
                 if (address != null && (address.isSiteLocalAddress() || address.isLinkLocalAddress())) {
-                    JSObject endpoint = new JSObject(); endpoint.put("host", address.getHostAddress()); endpoint.put("port", service.getPort()); finishDiscovery(endpoint, null);
+                    JSObject endpoint = new JSObject(); endpoint.put("host", address.getHostAddress()); endpoint.put("port", service.getPort()); endpoint.put("fingerprint", pin); finishDiscovery(endpoint, null);
                 } else resolveNext();
             }); }
         });

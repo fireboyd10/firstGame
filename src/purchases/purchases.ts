@@ -5,6 +5,7 @@
 import { Capacitor } from '@capacitor/core';
 import { PACK_CATEGORY } from '../data/scenario-bank';
 import { ALL_PRODUCT_IDS, BUNDLE_PRODUCT_ID, PACKS, packForProduct } from './products';
+import { reviewAccess, type ReviewAccess } from './review-access';
 
 /** Subset of @capgo/native-purchases used here. Injectable for tests. */
 export interface PurchaseGateway {
@@ -29,16 +30,16 @@ export class PurchaseManager {
   private owned = readOwned();
   private prices = new Map<string, string>();
 
-  constructor(private readonly gateway: PurchaseGateway | null) {}
+  constructor(private readonly gateway: PurchaseGateway | null, readonly review: ReviewAccess = reviewAccess) {}
 
   /** Purchases only exist in native apps. */
   get storeAvailable(): boolean { return this.gateway !== null; }
 
-  owns(packId: string): boolean { return this.owned.has(packId); }
+  owns(packId: string): boolean { return this.owned.has(packId) || this.review.active && PACKS.some(pack => pack.packId === packId); }
 
   /** Categories the player may use right now: base topics plus owned packs. */
   unlockedCategories(base: readonly string[]): string[] {
-    const premium = PACKS.filter((pack) => this.owned.has(pack.packId))
+    const premium = PACKS.filter((pack) => this.owns(pack.packId))
       .map((pack) => PACK_CATEGORY[pack.packId])
       .filter((category): category is string => typeof category === 'string');
     return [...base, ...premium];
@@ -76,6 +77,7 @@ export class PurchaseManager {
 
   /** Store round-trip: returns the pack ids granted (empty when cancelled/failed). */
   async buy(productId: string): Promise<string[]> {
+    if (this.review.active) return []; // Reviewers never open a payment sheet.
     if (!this.gateway) return [];
     try {
       const transaction = await this.gateway.purchaseProduct({ productIdentifier: productId });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { _android } from 'playwright-core';
 
@@ -27,6 +27,28 @@ try {
     page.setDefaultTimeout(20000);
     page.on('pageerror', error => report.errors.push(error.message));
     await page.locator('[data-action="party-open"]').waitFor();
+    if (!index) {
+      await page.locator('[data-action="shop-open"]').click();
+      await page.locator('summary').filter({ hasText: 'Review access' }).click();
+      await page.locator('#review-code').fill('WRONGCODE');
+      await page.locator('[data-action="review-activate"]').click();
+      await page.locator('#review-error:not([hidden])').waitFor();
+      const originalOwnership = await page.evaluate(() => localStorage.getItem('red-flag-rush.packs.v1'));
+      const review = JSON.parse(await readFile(resolve(root, 'release/play-store/review-access-private.json'), 'utf8'));
+      await page.locator('#review-code').fill(review.code);
+      await page.locator('[data-action="review-activate"]').click();
+      await page.locator('[data-action="review-exit"]').waitFor();
+      assert.equal(await page.locator('.pack-owned').count(), 3);
+      assert.equal(await page.evaluate(() => localStorage.getItem('red-flag-rush.packs.v1')), originalOwnership);
+      await page.locator('[data-action="close-shop"]').click();
+      await page.locator('[data-action="party-open"]').click();
+      assert.equal(await page.locator('.topic-locked').count(), 0, 'Reviewer must access every premium topic without payment');
+      await page.locator('[data-party-action="close"]').click();
+      await page.locator('[data-action="shop-open"]').click();
+      await page.locator('[data-action="review-exit"]').click();
+      await page.locator('[data-action="close-shop"]').click();
+      report.passed.push('Real native review-code verification unlocks every premium topic without charging or changing purchased ownership; exit restores normal access');
+    }
     await page.locator('[data-action="party-open"]').click();
     assert(!/npm.cmd|On your computer/.test(await page.locator('#modal-content').textContent()), 'Native party UI must not require a computer.');
     await page.locator('#party-name').fill(index ? 'Guest phone' : 'Host phone');
@@ -37,13 +59,31 @@ try {
   await host.locator('[data-party-action="create"]').click();
   await host.locator('#party-lobby').waitFor();
   const code = (await host.locator('.party-room-code').textContent()).trim();
+  const securityCode = (await host.locator('.party-security-code').textContent()).trim();
   await guest.locator('#party-code').fill(code);
+  await guest.locator('#party-security').fill('0000-0000-0000');
+  await guest.locator('[data-party-action="join"]').click();
+  await guest.locator('#party-error:not([hidden])').waitFor();
+  assert.match(await guest.locator('#party-error').textContent(), /security code/i);
+  assert.equal(await host.locator('.party-player').count(), 1, 'Wrong security code must not send a nickname or create a player');
+  await guest.locator('#party-security').fill(securityCode);
   const discoveryStart = performance.now();
   await guest.locator('[data-party-action="join"]').click();
   await guest.locator('#party-lobby').waitFor();
   report.discoveryMs = Math.round(performance.now() - discoveryStart);
   await host.waitForFunction(() => document.querySelectorAll('.party-player').length === 2);
-  report.passed.push('Two installed native apps discover and join a phone-hosted room through Wi-Fi, without a computer server');
+  report.passed.push('Two installed native apps discover and join a phone-hosted room using pinned TLS; a wrong security code is rejected before transmitting a nickname');
+  const storedSession = await guest.evaluate(() => JSON.parse(sessionStorage.getItem('red-flag-rush.party-session.v2')));
+  assert.match(storedSession.phone.fingerprint, /^[0-9a-f]{64}$/);
+  const nativeRequest = options => guest.evaluate(async options => window.Capacitor.Plugins.PhoneParty.request(options), options);
+  await assert.rejects(() => nativeRequest({ ...storedSession.phone, fingerprint: '0'.repeat(64), method: 'GET', path: `/api/rooms/${code}`, token: storedSession.token }));
+  await assert.rejects(() => nativeRequest({ ...storedSession.phone, fingerprint: '', method: 'GET', path: `/api/rooms/${code}`, token: storedSession.token }));
+  const validState = await nativeRequest({ ...storedSession.phone, method: 'GET', path: `/api/rooms/${code}`, token: storedSession.token });
+  assert.equal(validState.status, 200);
+  assert.equal(validState.data.players.length, 2);
+  const probe = await guest.evaluate(async options => window.Capacitor.Plugins.PhoneParty.inspectHost(options), { host: storedSession.phone.host, port: storedSession.phone.port, securityCode: securityCode.replace(/-/g, '').toLowerCase() });
+  assert.equal(probe.fingerprint, storedSession.phone.fingerprint);
+  report.passed.push('Native TLS rejects substituted/missing certificate pins and verifies the manual-address pairing probe; normal requests still succeed');
   await host.screenshot({ path: resolve(output, 'native-phone-party-lobby.png') });
   await host.locator('[data-party-action="start"]').click();
   for (let round = 1; round <= 5; round++) {

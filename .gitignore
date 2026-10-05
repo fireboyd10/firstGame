@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .qa/
+release/
 .npm-cache/
 *.log
 .DS_Store

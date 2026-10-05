@@ -118,9 +118,6 @@ export class AdManager {
     if (this.initialized) return this.consentAllowsAds;
     this.testing = initializeForTesting;
     try {
-      // This plugin binds the consent form's view controller in initialize().
-      // Initializing the SDK does not authorize our app to request an ad.
-      await this.gateway.initialize({ initializeForTesting });
       // Test units are for device previews. Live ads must wait for UMP, even
       // when non-personalized ads are requested and ATT is never requested.
       if (!this.testing) {
@@ -132,6 +129,9 @@ export class AdManager {
         this.privacyOptionsRequired = consent.privacyOptionsRequirementStatus === 'REQUIRED';
         if (!consent.canRequestAds) return false;
       }
+      // Google can preload during SDK initialization. Start it only after UMP
+      // permits ads; the install patch makes the iOS UMP presenter available first.
+      await this.gateway.initialize({ initializeForTesting });
       this.consentAllowsAds = true;
       this.initialized = true;
       this.preloadInterstitial();

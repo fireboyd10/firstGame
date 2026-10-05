@@ -5,8 +5,9 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.*;
+import javax.net.ssl.*;
 
-/** Bounded, one-request TCP channels; networking never runs on the UI thread. */
+/** Bounded, one-request TLS channels; networking never runs on the UI thread. */
 public final class LanSocketServer implements AutoCloseable {
     public interface Handler { CompletableFuture<String> handle(String request, String peer); }
     private final ServerSocket listener;
@@ -14,9 +15,10 @@ public final class LanSocketServer implements AutoCloseable {
     private final ThreadPoolExecutor workers = new ThreadPoolExecutor(2, 12, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(24));
     private final Handler handler;
     private volatile boolean running = true;
-    public LanSocketServer(InetAddress address, Handler handler) throws IOException {
+    public LanSocketServer(InetAddress address, SSLContext context, Handler handler) throws IOException {
         this.handler = handler;
-        listener = new ServerSocket(); listener.setReuseAddress(true);
+        listener = context.getServerSocketFactory().createServerSocket(); listener.setReuseAddress(true);
+        LanTls.configure((SSLServerSocket) listener);
         listener.bind(new InetSocketAddress(address, 0), 16);
         Thread acceptor = new Thread(this::accept, "RedFlagRush-party-listener");
         acceptor.setDaemon(true); acceptor.start();
@@ -35,6 +37,7 @@ public final class LanSocketServer implements AutoCloseable {
     }
     private void serve(Socket socket) {
         try (Socket connection = socket) {
+            ((SSLSocket) connection).startHandshake();
             String request = readLine(connection.getInputStream());
             String response = handler.handle(request, connection.getInetAddress().getHostAddress()).get(7, TimeUnit.SECONDS);
             writeLine(connection.getOutputStream(), response);
@@ -55,14 +58,11 @@ public final class LanSocketServer implements AutoCloseable {
         if (bytes.length > 65536 || value.indexOf('\n') >= 0) throw new IOException("Invalid party message.");
         output.write(bytes); output.write('\n'); output.flush();
     }
-    public static String request(InetAddress address, int port, String data) throws IOException {
-        return request(address, port, data, new Socket());
+    public static String request(InetAddress address, int port, String data, String fingerprint) throws IOException {
+        return request(address, port, data, fingerprint, new Socket());
     }
-    public static String request(InetAddress address, int port, String data, Socket wifiSocket) throws IOException {
-        try (Socket socket = wifiSocket) {
-            if (!(address.isSiteLocalAddress() || address.isLinkLocalAddress() || address.isLoopbackAddress())) throw new IOException("Use a local Wi-Fi address.");
-            if (port < 1 || port > 65535) throw new IOException("Invalid party port.");
-            socket.connect(new InetSocketAddress(address, port), 5000); socket.setSoTimeout(8000); socket.setTcpNoDelay(true);
+    public static String request(InetAddress address, int port, String data, String fingerprint, Socket wifiSocket) throws IOException {
+        try (Socket socket = LanTls.connect(address, port, fingerprint, wifiSocket, false)) {
             writeLine(socket.getOutputStream(), data);
             return readLine(socket.getInputStream());
         }

@@ -41,7 +41,7 @@ describe('interstitial placement policy', () => {
 });
 
 describe('AdManager', () => {
-  it('does not load live ads when consent is unavailable', async () => {
+  it('does not initialize the live ad SDK or load ads when consent is unavailable', async () => {
     for (const requestConsentInfo of [
       async () => ({ status: 'REQUIRED', canRequestAds: false, privacyOptionsRequirementStatus: 'REQUIRED' }),
       async () => { throw new Error('offline'); },
@@ -51,18 +51,22 @@ describe('AdManager', () => {
       expect(await manager.initialize(false)).toBe(false);
       manager.recordGameCompleted();
       expect(await manager.maybeShowInterstitial()).toBe(false);
-      expect(gateway.calls).toEqual(['initialize']);
+      expect(gateway.calls).toEqual([]);
     }
   });
 
   it('gathers required consent before requesting non-personalized live ads', async () => {
+    const order: string[] = [];
     const gateway = fakeGateway({
-      requestConsentInfo: async () => ({ status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: true, privacyOptionsRequirementStatus: 'REQUIRED' }),
-      prepareInterstitial: async (options) => { expect(options.npa).toBe(true); },
+      requestConsentInfo: async () => { order.push('consent-info'); return { status: 'REQUIRED', canRequestAds: false, isConsentFormAvailable: true, privacyOptionsRequirementStatus: 'REQUIRED' }; },
+      showConsentForm: async () => { order.push('consent-form'); return { status: 'OBTAINED', canRequestAds: true, privacyOptionsRequirementStatus: 'REQUIRED' }; },
+      initialize: async () => { order.push('initialize'); },
+      prepareInterstitial: async (options) => { order.push('prepare'); expect(options.npa).toBe(true); },
     });
     const manager = new AdManager(gateway, units, AD_POLICY, () => 0);
     expect(await manager.initialize(false)).toBe(true);
     expect(manager.privacyOptionsRequired).toBe(true);
+    expect(order).toEqual(['consent-info', 'consent-form', 'initialize', 'prepare']);
     manager.recordGameCompleted();
     expect(await manager.maybeShowInterstitial()).toBe(true);
   });
@@ -80,6 +84,21 @@ describe('AdManager', () => {
     expect(await manager.showPrivacyOptions()).toBe(true);
     expect(await manager.maybeShowInterstitial()).toBe(false);
     expect(gateway.calls).not.toContain('showInterstitial');
+  });
+
+  it('can enable the ad SDK after initially denied consent is changed in privacy options', async () => {
+    let allowed = false;
+    const gateway = fakeGateway({
+      requestConsentInfo: async () => ({ status: 'OBTAINED', canRequestAds: allowed, privacyOptionsRequirementStatus: 'REQUIRED' }),
+      showPrivacyOptionsForm: async () => { allowed = true; },
+    });
+    const manager = new AdManager(gateway, units, AD_POLICY, () => 0);
+    expect(await manager.initialize(false)).toBe(false);
+    expect(gateway.calls).not.toContain('initialize');
+    expect(await manager.showPrivacyOptions()).toBe(true);
+    expect(gateway.calls.filter(call => call === 'initialize')).toHaveLength(1);
+    manager.recordGameCompleted();
+    expect(await manager.maybeShowInterstitial()).toBe(true);
   });
 
   it('is inert without a gateway (web/PWA stays ad-free)', async () => {

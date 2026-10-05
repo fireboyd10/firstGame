@@ -1,6 +1,7 @@
 # Deployment guide
 
-Both native projects use `com.fireboydroid.redflagrush` (version 1.0, build 1).
+Both native projects use `com.fireboydroid.redflagrush`. Android's current testing
+release is 1.0.2 (versionCode 3); iOS version settings remain independent.
 The iOS Swift packages include App, AdMob and Native Purchases. Android targets
 API 36 with JDK 21. The included CI workflows compile both platforms without
 store signing credentials; their artifacts are **not store-uploadable releases**.
@@ -8,7 +9,11 @@ store signing credentials; their artifacts are **not store-uploadable releases**
 Before submission, run `npm run release:check:android` or
 `npm run release:check:ios`. These checks deliberately fail while test ad IDs or
 Android signing inputs remain. They cannot verify products, accounts or listings
-in the store consoles. Test ads remain appropriate for local device previews.
+in the store consoles. For the current closed test with official test ads, use
+`npm run release:check:android -- --closed-testing`. This explicit mode does not
+approve test IDs for monetized production. All release files and private review
+instructions are kept locally in `release/play-store/` (ignored by Git), with
+the original relocation audit in `.qa/relocation-audit/`.
 
 ## Android: build a signed AAB
 
@@ -69,7 +74,9 @@ stays on automatically while they are in place. To go live:
    during development gets AdMob accounts banned.
 
 Live ad requests explicitly use `npa: true` and wait for UMP's `canRequestAds`.
-The plugin is initialized first because it binds the iOS consent form presenter.
+Live ad SDK initialization also waits for consent because Google may preload ads
+during initialization. The reproducible install patch for AdMob 8.1.0 binds its
+iOS UMP presenter before initialization; it does not upgrade the dependency.
 Create and publish the required privacy messages in **AdMob → Privacy & messaging**;
 the app refreshes consent on launch, shows required forms, and exposes **Ad privacy
 choices** when UMP requires it. A failed consent check leaves ads disabled.
@@ -115,11 +122,25 @@ To activate (per store — IDs must match exactly):
 4. **Restore purchases** is already implemented (store rules require it) — the shop
    and lobby offer it, and entitlements are queried silently at every cold start. The explicit restore
    action can ask for store authentication; startup does not invoke it.
-5. **Content rating**: the spicy pack likely bumps the game to 17+/Mature in the
-   IARC questionnaire. Keep scenarios suggestive, never explicit — explicit sexual
-   content is banned on both stores.
-6. Declare "In-app purchases" in the Play data-safety form / App Store privacy
-   details; purchase records live with the store, not your server.
+5. **Content rating**: retain the existing IARC answers and issued regional ratings
+   for the unchanged scenario content, including all paid packs. Transport encryption
+   and reviewer access do not add or remove scenario content.
+6. Review the store data disclosures against the actual SDKs and `PRIVACY.md`;
+   payment credentials stay with the store, while unlocked packs are cached on-device.
+
+Reviewers can open the shop, expand **Review access**, and enter the reusable code
+provided privately in Play Console to unlock every topic for the app session.
+No purchase or account is required for this review path. Only the code's SHA-256
+digest is in source control; the code and paste-ready instructions stay in
+`release/play-store/`. **Exit review access** ends it without changing genuine
+purchase ownership. App relaunch also ends review access.
+
+Native Party rooms use TLS 1.2+ and a temporary host certificate. Guests enter
+the room code and the separate security code displayed on the host phone before
+joining. The full certificate pin is kept for reconnects. Old plaintext native
+sessions are discarded; the installed app never falls back to the browser's
+development HTTP server. Both phones still use the same Wi-Fi with the host app
+open. No external server, new account or subscription has been introduced.
 
 ## Google Play submission (manual, one-time setup)
 

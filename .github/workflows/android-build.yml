@@ -13,6 +13,7 @@ on:
       - 'android/**'
       - 'capacitor.config.ts'
       - 'vite.config.ts'
+      - 'vitest.config.ts'
       - 'tsconfig.json'
       - 'index.html'
       - 'package*.json'
