@@ -5,6 +5,8 @@ import { detectPartyBaseUrl, enterParty, getPartyRoomState, normalizePartyUrl, p
 import { BASE_CATEGORIES, PACK_CATEGORY } from '../data/scenario-bank';
 import { BUNDLE_PRODUCT_ID, BUNDLE_FALLBACK_PRICE, BUNDLE_TITLE, PACKS } from '../purchases/products';
 import type { PurchaseManager } from '../purchases/purchases';
+import { isNativePlatform } from '../platform/native';
+import { stopPhoneHost } from './phone-host';
 
 const escape = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 const key = 'red-flag-rush.party-session.v2';
@@ -14,7 +16,12 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
   try {
     const saved = JSON.parse(sessionStorage.getItem(key) || 'null');
     if (saved && /^[A-Z2-9]{6}$/.test(saved.code) && /^[A-Za-z0-9_-]{43}$/.test(saved.token)) {
-      session = { ...saved, baseUrl: normalizePartyUrl(saved.baseUrl) };
+      if (saved.phone && saved.hosting) {
+        // A WebView reload loses its in-memory room, just like restarting the web server.
+        void stopPhoneHost().catch(() => {});
+        sessionStorage.removeItem(key);
+      } else if (saved.phone && typeof saved.phone.host === 'string' && Number.isInteger(saved.phone.port) && saved.phone.port > 0 && saved.phone.port < 65536) session = saved;
+      else session = { ...saved, baseUrl: normalizePartyUrl(saved.baseUrl) };
     }
   } catch { /* A room still works when session storage is unavailable. */ }
   let state: PartyRoomState | null = null;
@@ -79,7 +86,9 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
         ${lengths(selectedLength)}${topicsPicker(true)}<label class="field-label" for="party-theme">Your crowd</label><select class="party-input" id="party-theme">${[['everyone', 'The whole group'], ['girls', "Girls' night"], ['boys', "Boys' night"]].map(([value, label]) => `<option value="${value}" ${value === selectedTheme ? 'selected' : ''}>${label}</option>`).join('')}</select>
         ${button('create', 'CREATE A ROOM')}
         <div class="party-divider">Joining your friends?</div><label class="field-label" for="party-code">Room code</label><div class="party-inline"><input class="party-input party-code-input" id="party-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABCDEF" value="${escape(savedCode)}">${button('join', 'JOIN', false, true)}</div>
-        <details class="party-connection" ${!detectPartyBaseUrl() ? 'open' : ''}><summary>Wi-Fi connection</summary><p>Open the same game address on every phone. The room code works at that address.</p><label class="field-label" for="party-server">Party server address</label><input class="party-input" id="party-server" type="url" value="${escape(detectPartyBaseUrl())}" placeholder="http://192.168.1.20:3000"><p>On your computer, run <code>npm.cmd run party</code> and keep the terminal open. Use the Same Wi-Fi address it prints.</p></details>`;
+        ${isNativePlatform()
+          ? '<p class="modal-hint">Connect everyone to the same Wi-Fi. The phone that creates the room hosts it automatically.</p><details class="party-connection"><summary>Connection help</summary><p>Keep the host phone in the game. If your Wi-Fi blocks room discovery, enter the connection address shown on the host phone. Guest networks may block connections between phones.</p><label class="field-label" for="party-server">Host phone connection address (optional)</label><input class="party-input" id="party-server" type="url" placeholder="http://192.168.1.20:3000"></details>'
+          : `<details class="party-connection" ${!detectPartyBaseUrl() ? 'open' : ''}><summary>Wi-Fi connection</summary><p>Open the same game address on every phone. The room code works at that address.</p><label class="field-label" for="party-server">Party server address</label><input class="party-input" id="party-server" type="url" value="${escape(detectPartyBaseUrl())}" placeholder="http://192.168.1.20:3000"><p>On your computer, run <code>npm.cmd run party</code> and keep the terminal open. Use the Same Wi-Fi address it prints.</p></details>`}`;
     } else if (!state) {
       html += `<h2 id="modal-title">Getting everyone together.</h2><p class="modal-description">Reconnecting to room ${escape(session.code)}.</p>${button('refresh', 'TRY AGAIN')}${button('leave', 'LEAVE ROOM', false, true)}`;
     } else {
@@ -91,7 +100,7 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
       const names = (answer: string) => (state!.results || []).filter((vote) => vote.answer === answer).map((vote) => escape(state!.players.find((player) => player.id === vote.playerId)?.name)).join(', ');
       if (state.phase === 'lobby') {
         const vibe = state.theme === 'girls' ? "Girls' night is on." : state.theme === 'boys' ? "Boys' night is on." : 'Everyone in?';
-        html += `<div id="party-lobby"><h2 id="modal-title">${vibe}</h2><p class="modal-description">Same Wi-Fi. Same game address. Share this code:</p><strong class="party-room-code">${escape(state.code)}</strong><p class="party-address">${escape(session.joinUrl || session.baseUrl)}</p><ul class="party-player-list">${state.players.map((player) => `<li class="party-player"><span>${escape(player.name)}${player.id === session!.playerId ? ' (you)' : ''}</span><small>${player.id === state!.hostId ? 'Host' : player.connected ? 'Ready' : 'Reconnecting'}</small></li>`).join('')}</ul>
+        html += `<div id="party-lobby"><h2 id="modal-title">${vibe}</h2><p class="modal-description">${session.phone ? 'Same Wi-Fi. Share this code:' : 'Same Wi-Fi. Same game address. Share this code:'}</p><strong class="party-room-code">${escape(state.code)}</strong>${session.phone ? (session.hosting ? `<p class="modal-hint">Keep this phone in the game while your friends play.</p><details class="party-connection"><summary>Connection address</summary><p class="party-address">${escape(session.joinUrl)}</p></details>` : '') : `<p class="party-address">${escape(session.joinUrl || session.baseUrl)}</p>`}<ul class="party-player-list">${state.players.map((player) => `<li class="party-player"><span>${escape(player.name)}${player.id === session!.playerId ? ' (you)' : ''}</span><small>${player.id === state!.hostId ? 'Host' : player.connected ? 'Ready' : 'Reconnecting'}</small></li>`).join('')}</ul>
           ${host ? lengths(state.totalRounds) + topicsPicker(true) + button('start', 'EVERYONE IN? LET\'S GO', state.players.length < 2) : `<p class="modal-description">${state.totalRounds} scenarios · ${escape((state.categories ?? []).join(', '))}. Waiting for the host to start.</p>`}</div>`;
       } else if (state.phase === 'question') {
         html += `<div id="party-question"><p class="eyebrow">SCENARIO ${state.round} OF ${state.totalRounds}</p><h2 id="modal-title" class="sr-only">Make your call</h2><div class="party-scenario">${cardArt(state.round)}<p>${escape(state.scenario?.text)}</p></div><p id="party-countdown" class="party-countdown" role="timer" aria-live="off"></p><div class="party-vote-row">${button('red', '🚩 RED FLAG', me?.answered, true)}${button('green', '💚 GREEN FLAG', me?.answered, true)}</div><p id="party-status" class="modal-description" role="status">${me?.answered ? 'Your vote is in. Keep a straight face.' : 'Go with your own take. Nobody sees it yet.'}</p><p class="modal-hint">${state.players.filter((player) => player.answered).length} of ${state.players.length} votes in</p></div>`;
@@ -164,7 +173,7 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
       if (action === 'create' || action === 'join') {
         if (!name) throw new Error('What should we call you? Add your name first.');
         if (action === 'join' && !/^[A-Z2-9]{6}$/.test(code)) throw new Error('Enter the six-character room code.');
-        session = await enterParty(normalizePartyUrl(address), name, action === 'join' ? code : undefined, length, theme, [...selectedTopics]);
+        session = await enterParty(isNativePlatform() ? address : normalizePartyUrl(address), name, action === 'join' ? code : undefined, length, theme, [...selectedTopics]);
         save(); state = null;
         accept(await getPartyRoomState(session));
       } else if (action === 'topic') {

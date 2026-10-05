@@ -44,7 +44,7 @@ jobs:
       - run: npm run mobile:sync:android
       - name: Verify release bundle without private signing keys
         working-directory: android
-        run: ./gradlew --no-daemon lintRelease bundleRelease -PallowUnsignedRelease=true
+        run: ./gradlew --no-daemon testDebugUnitTest lintRelease bundleRelease -PallowUnsignedRelease=true
       - uses: actions/upload-artifact@v4
         with:
           name: red-flag-rush-android-unsigned

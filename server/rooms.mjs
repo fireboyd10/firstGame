@@ -1,4 +1,20 @@
-import { randomBytes, randomInt, randomUUID } from 'node:crypto';
+// The same authoritative rules run in Node and inside the hosting phone.
+function randomInt(max) {
+  const limit = Math.floor(0x100000000 / max) * max;
+  const value = new Uint32Array(1);
+  do { globalThis.crypto.getRandomValues(value); } while (value[0] >= limit);
+  return value[0] % max;
+}
+function randomUUID() {
+  const value = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  value[6] = (value[6] & 15) | 64; value[8] = (value[8] & 63) | 128;
+  const hex = Array.from(value, byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+function playerToken() {
+  const value = globalThis.crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 
 export class RoomError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -64,7 +80,7 @@ export class RoomService {
   addPlayer(room, name) {
     if (room.players.length >= 8) fail(409, 'This room already has eight players.');
     if (room.players.some((player) => player.name.toLocaleLowerCase() === name.toLocaleLowerCase())) fail(409, 'That name is already in this room. Choose another.');
-    const player = { id: randomUUID(), token: randomBytes(32).toString('base64url'), name, answer: null, redAccepted: 0, greenAccepted: 0, lastSeen: this.now() };
+    const player = { id: randomUUID(), token: playerToken(), name, answer: null, redAccepted: 0, greenAccepted: 0, lastSeen: this.now() };
     room.players.push(player);
     room.touchedAt = this.now();
     return { code: room.code, token: player.token, playerId: player.id };

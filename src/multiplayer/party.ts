@@ -1,6 +1,7 @@
 import { isNativePlatform } from '../platform/native';
 import { CapacitorHttp } from '@capacitor/core';
 import type { PartyTaste } from './personality';
+import { PhoneParty, hostPhoneRoom, requestPhoneRoom, type PhoneEndpoint } from './phone-host';
 
 export interface PartyPlayer extends Partial<PartyTaste> {
   id: string; name: string; answered: boolean; connected: boolean;
@@ -15,7 +16,7 @@ export interface PartyRoomState {
   results?: Array<{ playerId: string; answer: 'red' | 'green' | null }>;
   discussion?: string; winnerIds?: string[];
 }
-export interface PartySession { code: string; token: string; playerId: string; name: string; baseUrl: string; joinUrl?: string }
+export interface PartySession { code: string; token: string; playerId: string; name: string; baseUrl: string; joinUrl?: string; phone?: PhoneEndpoint; hosting?: boolean }
 export class PartyRequestError extends Error {
   constructor(message: string, readonly status = 0) { super(message); }
 }
@@ -67,6 +68,25 @@ async function request<T>(baseUrl: string, path: string, init: RequestInit = {})
 }
 
 export async function enterParty(baseUrl: string, name: string, code?: string, totalRounds = 10, theme = 'everyone', categories?: string[]): Promise<PartySession> {
+  if (isNativePlatform()) {
+    try {
+      if (!code) {
+        const created = await hostPhoneRoom({ name, totalRounds, theme, categories });
+        return { code: created.code, token: created.token, playerId: created.playerId, name, baseUrl: `phone://${created.code}`, phone: created.endpoint, hosting: true, joinUrl: `http://${created.endpoint.host}:${created.endpoint.port}` };
+      }
+      let endpoint: PhoneEndpoint;
+      if (baseUrl) {
+        const address = new URL(normalizePartyUrl(baseUrl));
+        const host = address.hostname.replace(/^\[|\]$/g, '');
+        if (!address.port || !/^[0-9a-fA-F:.%]+$/.test(host)) throw new Error('Use the connection address shown on the host phone.');
+        endpoint = { host, port: Number(address.port) };
+      } else endpoint = await PhoneParty.discover({ code });
+      const reply = await requestPhoneRoom(endpoint, code, { method: 'POST', path: `/api/rooms/${code}/join`, body: { name } });
+      const data = reply.data as { code: string; token: string; playerId: string; error?: string };
+      if (reply.status !== 200) throw new PartyRequestError(data.error || 'Could not join this room.', reply.status);
+      return { ...data, name, baseUrl: `phone://${code}`, phone: endpoint };
+    } catch (error) { throw error instanceof Error ? error : new PartyRequestError('Cannot reach the host phone. Check Wi-Fi and the room code.'); }
+  }
   const health = await request<{ service: string; version: number; wifiUrls?: string[] }>(baseUrl, '/api/health');
   if (health.service !== 'red-flag-party' || health.version !== 2) throw new PartyRequestError('Restart the party server with npm.cmd run party to load the latest version.');
   const result = await request<{ code: string; token: string; playerId: string }>(baseUrl, code ? `/api/rooms/${encodeURIComponent(code)}/join` : '/api/rooms', {
@@ -75,10 +95,17 @@ export async function enterParty(baseUrl: string, name: string, code?: string, t
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(new URL(baseUrl).hostname);
   return { ...result, name, baseUrl, joinUrl: loopback ? health.wifiUrls?.[0] || baseUrl : baseUrl };
 }
+async function phoneRequest(session: PartySession, path: string, method: string, body?: object): Promise<PartyRoomState> {
+  const reply = await requestPhoneRoom(session.phone!, session.code, { path, method, body, token: session.token });
+  if (reply.status !== 200) throw new PartyRequestError((reply.data as { error?: string }).error || 'The room could not be reached.', reply.status);
+  return reply.data as PartyRoomState;
+}
 export function getPartyRoomState(session: PartySession): Promise<PartyRoomState> {
+  if (session.phone) return phoneRequest(session, `/api/rooms/${session.code}`, 'GET');
   return request(session.baseUrl, `/api/rooms/${session.code}`, { headers: { Authorization: `Bearer ${session.token}` } });
 }
 export function partyAction(session: PartySession, action: string, body: object = {}): Promise<PartyRoomState> {
+  if (session.phone) return phoneRequest(session, `/api/rooms/${session.code}/${action}`, 'POST', body);
   return request(session.baseUrl, `/api/rooms/${session.code}/${action}`, {
     method: 'POST', headers: { Authorization: `Bearer ${session.token}` }, body: JSON.stringify(body),
   });

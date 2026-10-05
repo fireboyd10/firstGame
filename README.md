@@ -4,6 +4,17 @@
 
 ## Play together on Wi-Fi
 
+In the installed Android/iOS app, connect everyone's phones to the same Wi-Fi.
+Choose **Play with friends**, enter your name, and **Create a room**. That phone
+hosts the room automatically. Friends enter their names and the six-character
+code and tap **Join**; the app finds the hosting phone on Wi-Fi. No computer or
+internet-hosted service is needed. Keep the hosting phone in the game until the
+party ends, and allow local-network access if the system asks. Guest networks
+that isolate devices cannot support local parties. **Connection help** provides
+a host-address fallback when the network blocks automatic discovery.
+
+### Browser development and Wi-Fi play
+
 On the computer, from this project folder:
 
 ```powershell
@@ -33,9 +44,16 @@ Final results show:
 
 Every deck contains both types. The classifications are editorial takes used for final scores, not revealed as right/wrong feedback between rounds. Party content is in `src/data/party-scenarios.ts`, separate from the solo deck. Room themes change the crowd label, not scoring or assumptions about gender.
 
-Reloading the same tab restores your seat. A disconnected player can return and finish voting. After a minute without contact, the host can explicitly remove that player; the server never invents a vote. Hosting transfers if the host leaves or stops responding. Rooms are held in memory, expire after two hours without activity, and disappear when the server stops.
+Reloading the same browser tab restores your seat. A disconnected player can return and finish voting. After a minute without contact, the host can explicitly remove that player; the room never invents a vote. Round moderation transfers if the moderator leaves or stops responding. In the native app, the phone that created the room must keep hosting even if another player becomes moderator. Rooms are held in memory, expire after two hours without activity, and disappear when the hosting app/server stops. Reloading the hosting phone's WebView starts over because its in-memory room is lost.
 
-### If a room will not connect
+### If a native room will not connect
+
+- Keep the phone that created the room in the game and connect all phones to the same Wi-Fi.
+- Allow Local Network access on iOS. Check the six-character room code.
+- Under Wi-Fi connection, the guest can enter the connection address displayed by the host if discovery is blocked.
+- Guest Wi-Fi with client isolation cannot support local parties. Use a trusted network that allows devices to communicate.
+
+### If a browser room will not connect
 
 - Stop any old terminal running this project and run `npm.cmd run party` again. Reload the game. On an installed PWA, accept **Update & reload** if offered.
 - Open the same printed address **and port** on every phone. A room on port 3000 is separate from a room on port 5173.

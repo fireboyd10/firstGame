@@ -4,6 +4,8 @@
 <dict>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Join a party game hosted by a friend on the same Wi-Fi network.</string>
+  <key>NSBonjourServices</key>
+  <array><string>_redflagrush._tcp</string></array>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsLocalNetworking</key>

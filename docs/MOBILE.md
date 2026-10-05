@@ -24,23 +24,37 @@ Sync scripts build and typecheck the web app before copying it. `mobile:sync` ta
 
 ## App behaviour
 
+The installed apps host party rooms on the phone that creates the room. Native
+Bonjour/NSD finds rooms on the same Wi-Fi and a bounded TCP bridge carries the
+existing room API messages. The same `server/rooms.mjs` engine supplies all room
+rules on both the phone and the development server. No computer or cloud service
+is needed for native parties. Keep the hosting app open; closing it ends rooms
+stored in its memory. Android binds client sockets to Wi-Fi, including networks
+without internet, and iOS asks for local-network access. A host-address fallback
+is available when automatic discovery is blocked. Wi-Fi client isolation still
+prevents devices from communicating.
+
 The shell loads bundled `dist/` assets. Do not set a release `server.url` to a development address. Solo play pauses on native background events as well as browser visibility changes. Android Back closes party/help, pauses solo, or returns home; at home it minimizes the app. Native apps skip service-worker registration and receive bundled updates through native releases.
 
-Party mode calls Capacitor's native HTTP API on native platforms, with explicit request timeouts, and uses ordinary fetch on the web. See [Capacitor HTTP](https://capacitorjs.com/docs/apis/http). The party server address can be entered under Wi-Fi connection or configured with `VITE_PARTY_SERVER_URL` before building.
+Native party requests use the phone's Wi-Fi connection, with bounded message sizes and request timeouts. The browser version uses ordinary fetch against the development/server API. `VITE_PARTY_SERVER_URL` applies to browser hosting, not native room discovery.
 
 ## Test local multiplayer
 
-Run `npm.cmd run party` on a computer and enter its Wi-Fi address in the native app. Keep the computer awake and on the same network. Opening that address in each phone's browser is also supported and requires no app installation.
+Install the app on two or more phones connected to the same Wi-Fi. On the first phone, open Party, enter a nickname and create a room. On the other phones, open Party, enter a nickname and the room code, and join. Keep the phone that created the room in the game throughout the party. Changing the round moderator does not move the network host to another phone.
 
-Android debug builds allow LAN HTTP via the debug manifest. Release builds require HTTPS; the debug override is not packaged into a release. See [Android network configuration](https://developer.android.com/privacy-and-security/security-config). A released app therefore needs an HTTPS party endpoint, or a separately reviewed local-network transport policy.
+The native LAN bridge also works in signed Android release builds. It does not use WebView HTTP or require a computer endpoint. Android's existing cleartext HTTP policy remains unchanged. The room protocol is local TCP; use it on a trusted Wi-Fi network. Room codes and player tokens are not a confidential messaging service.
 
-iOS declares a local-network usage description and a local-network ATS exception. Allow Local Network access when prompted. Validate the chosen hostname/IP and transport on the actual supported iOS versions; HTTPS is the release default. See [Apple local network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy) and [NSAllowsLocalNetworking](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking). No broad arbitrary-load exception is enabled.
+iOS declares the Bonjour service and a local-network usage description. Allow Local Network access when prompted; if denied, enable it in Settings before trying again. See [Apple local network privacy](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy). Its existing ATS settings remain unchanged.
+
+For native Android automation, install a debug APK on two devices on the same Wi-Fi and run `node scripts/phone-party-android-check.mjs`. Set `ADB` to the adb executable and `PARTY_ANDROID_DEVICES` to their comma-separated serial numbers. Android Emulator 36.5 or newer supports a shared Wi-Fi network between instances. The check uses the actual installed apps and native plugins, not a computer room server. Continue with physical Android/iPhone and mixed-platform testing before public release.
+
+For browser development only, `npm.cmd run party` starts the existing computer server. Open its printed Wi-Fi address in each phone's browser.
 
 ## Before store submission
 
 - The permanent identifier `com.fireboydroid.redflagrush` is set consistently in Capacitor config and both native projects. Set release versions and signing.
 - Native launcher icons and splash screens are generated from the game artwork (`npm run icons:native`). Swap in final branding later if the artwork changes.
-- Set the production party endpoint, exact allowed frontend origins, and HTTPS. Solo can remain entirely offline; the native app does not host rooms itself.
+- Native parties need a Wi-Fi network that allows communication between devices; no production party endpoint is required. Browser hosting still needs an endpoint, exact allowed frontend origins, and HTTPS.
 - Run the unit, server, and browser checks, then test actual Android and iOS devices: solo pause/resume, native Back, Wi-Fi joining, local-network permission denial, app switching during a vote, reconnecting, safe areas, large text, and a complete multiplayer game.
 - Review the privacy notice and store data disclosures for your final hosting setup. Keep signing keys outside version control.
 
