@@ -9,7 +9,10 @@ import javax.net.ssl.*;
 
 /** Bounded, one-request TLS channels; networking never runs on the UI thread. */
 public final class LanSocketServer implements AutoCloseable {
-    public interface Handler { CompletableFuture<String> handle(String request, String peer); }
+    public interface Handler {
+        CompletableFuture<String> handle(String request, String peer);
+        default void onFailure(Exception error) {} // Tests can diagnose provider failures; production never logs payloads.
+    }
     private final ServerSocket listener;
     private final Set<Socket> connections = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor workers = new ThreadPoolExecutor(2, 12, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(24));
@@ -41,7 +44,7 @@ public final class LanSocketServer implements AutoCloseable {
             String request = readLine(connection.getInputStream());
             String response = handler.handle(request, connection.getInetAddress().getHostAddress()).get(7, TimeUnit.SECONDS);
             writeLine(connection.getOutputStream(), response);
-        } catch (Exception ignored) { /* A timed-out/disconnected peer can retry safely. */ }
+        } catch (Exception error) { handler.onFailure(error); }
         finally { connections.remove(socket); }
     }
     static String readLine(InputStream input) throws IOException {

@@ -23,7 +23,9 @@ final class RoomTlsIdentity implements AutoCloseable {
             KeyPairGenerator generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore");
             generator.initialize(new KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY)
                 .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1"))
-                .setDigests(KeyProperties.DIGEST_SHA256)
+                // Conscrypt signs an already-hashed TLS transcript with NONEwithECDSA.
+                // SHA-256 remains available for the temporary certificate's self-signature.
+                .setDigests(KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_SHA256)
                 .setCertificateSubject(new X500Principal("CN=RedFlagRush Local Party"))
                 .setCertificateSerialNumber(new BigInteger(128, new SecureRandom()).add(BigInteger.ONE))
                 .setCertificateNotBefore(new Date(System.currentTimeMillis() - 300000))

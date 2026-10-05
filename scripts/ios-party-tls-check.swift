@@ -18,11 +18,19 @@ enum PartyTLSCheck {
         listener.newConnectionHandler = { connection in
             connections.append(connection)
             connection.start(queue: queue)
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
-                guard let data = data, data == Data("private nickname and vote\n".utf8) else { connection.cancel(); return }
-                handled += 1
-                connection.send(content: data, completion: .contentProcessed { _ in connection.cancel() })
+            func receive(_ buffer: Data) {
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, complete, error in
+                    var next = buffer; if let data = data { next.append(data) }
+                    if next.count > 4096 { connection.cancel(); return }
+                    if next.contains(10) {
+                        guard next == Data("private nickname and vote\n".utf8) else { connection.cancel(); return }
+                        handled += 1
+                        connection.send(content: next, completion: .contentProcessed { _ in connection.cancel() })
+                    } else if complete || error != nil { connection.cancel() }
+                    else { receive(next) }
+                }
             }
+            receive(Data())
         }
         listener.start(queue: queue)
         guard ready.wait(timeout: .now() + 10) == .success, let port = port else { fatalError("TLS listener did not start") }
@@ -46,9 +54,15 @@ enum PartyTLSCheck {
                     if case .ready = state {
                         if probe { finish(actualPin == identity.fingerprint); return }
                         connection.send(content: Data("private nickname and vote\n".utf8), completion: .contentProcessed { error in if error != nil { finish(false) } })
-                        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
-                            finish(data == Data("private nickname and vote\n".utf8))
+                        func receive(_ buffer: Data) {
+                            connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, complete, error in
+                                var next = buffer; if let data = data { next.append(data) }
+                                if next.contains(10) { finish(next == Data("private nickname and vote\n".utf8)) }
+                                else if next.count > 4096 || complete || error != nil { finish(false) }
+                                else { receive(next) }
+                            }
                         }
+                        receive(Data())
                     }
                 }
                 queue.asyncAfter(deadline: .now() + 8) { finish(false) }
