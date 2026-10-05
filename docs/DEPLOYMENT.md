@@ -45,10 +45,11 @@ overrides the output directory. Increment `versionCode` for every new Play uploa
 The native apps show ads via `@capacitor-community/admob`; the web/PWA stays ad-free.
 Placement policy lives in `src/ads/config.ts`:
 
-- **Interstitial** when leaving a finished game — after every 1–2 completed games
+- **Interstitial** at game completion, before replay/navigation — after every 1–2 completed games
   (varied so it never feels robotic), solo runs and finished party matches counting
-  alike. Never mid-game, and the schedule survives app restarts so relaunching can
-  never skip or reset it. (AdMob's own server-side frequency capping can add extra
+  alike. Ads preload during play; an ad that is not ready at completion is skipped.
+  The game waits for native dismissal/failure, and the schedule survives app restarts.
+  (AdMob's own server-side frequency capping can add extra
   limits later if you want them — no in-app timer needed.)
 - **No banners, no rewarded ads** — one restrained format at one natural breakpoint.
 
@@ -76,6 +77,15 @@ Test units bypass this live-ad consent flow. The app does not request ATT.
 Non-personalized ads still require applicable consent and SDK data disclosures;
 see [Google's UMP integration](https://developers.google.com/admob/ios/privacy).
 Update PRIVACY.md and store privacy forms for the final AdMob/hosting setup.
+
+The footer's **Privacy policy** opens a bundled offline page generated from
+`PRIVACY.md` by the normal build. The public policy for Play Console is
+https://fireboyd10.github.io/redflagrush/privacy.html. When changing the policy,
+publish the regenerated `public/privacy.html` at that path in `fireboyd10.github.io`.
+Complete Data safety, the contains-ads declaration, target audience/content rating,
+and store product setup before closed testing. Test ad IDs intentionally remain
+in this testing build; the production release-input check flags them until live
+AdMob configuration and privacy messages are ready.
 
 ## Premium topic packs (in-app purchases)
 

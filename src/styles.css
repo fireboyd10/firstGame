@@ -384,6 +384,8 @@ dialog h2 { margin: 10px 0 15px; }
 }
 
 /* Topic picker chips (party create/lobby) */
+.privacy-frame { display: block; width: 100%; height: 60vh; border: 0; border-radius: 12px; background: #18111d; }
+
 .party-topics { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
 .topic-chip {
   border: 1px solid #68445e; background: #241726; color: #fff0d7; border-radius: 999px;

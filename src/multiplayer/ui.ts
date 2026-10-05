@@ -9,7 +9,7 @@ import type { PurchaseManager } from '../purchases/purchases';
 const escape = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 const key = 'red-flag-rush.party-session.v2';
 
-export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; onClose: () => void; onGameFinished?: () => void; onPurchase?: (packIds: string[]) => void; purchases: () => PurchaseManager; sound: Sound; onMute: () => void }) {
+export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; onClose: () => void; onGameFinished?: () => void; canInteract?: () => boolean; onPurchase?: (packIds: string[]) => void; purchases: () => PurchaseManager; sound: Sound; onMute: () => void }) {
   let session: PartySession | null = null;
   try {
     const saved = JSON.parse(sessionStorage.getItem(key) || 'null');
@@ -130,7 +130,8 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
     state = value; clockOffset = value.serverNow - Date.now(); error = ''; render();
     if (opened && previous === 'question' && value.phase === 'reveal') hooks.sound.play('reveal');
     if (opened && previous === 'reveal' && value.phase === 'finished') hooks.sound.play('finish');
-    if (previous !== 'finished' && value.phase === 'finished') hooks.onGameFinished?.();
+    // Rejoining an already finished room is not a newly completed game.
+    if (previous && previous !== 'finished' && value.phase === 'finished') hooks.onGameFinished?.();
   }
   function failed(cause: unknown) {
     error = cause instanceof Error ? cause.message : 'Could not reach the room. Try again.';
@@ -146,6 +147,7 @@ export function createPartyUi(root: HTMLElement, hooks: { onOpen: () => void; on
     finally { polling = false; }
   }
   async function act(action: string, target: HTMLElement) {
+    if (hooks.canInteract && !hooks.canInteract()) return;
     hooks.sound.unlock();
     if (action === 'close') { hooks.onClose(); return; }
     if (action === 'mute') { hooks.onMute(); render(true); return; }

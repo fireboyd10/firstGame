@@ -1,4 +1,8 @@
-# Privacy
+# Red Flag Rush privacy policy
+
+Last updated: 5 October 2026.
+
+Red Flag Rush is provided by DA Game Studios (fireboyd10). For privacy questions or requests, contact [anc.darius@gmail.com](mailto:anc.darius@gmail.com).
 
 RED FLAG RUSH has no game accounts or separate analytics service. The web/PWA has no ads or billing. Native Android and iOS builds include Google AdMob and store billing through Google Play or Apple StoreKit.
 
@@ -17,3 +21,7 @@ A random player token, nickname, room code, and server address are saved in your
 Native mobile builds may ask for local-network access when joining a Wi-Fi party. No location, contacts, camera, or microphone access is required.
 
 Sharing a solo score happens only when you press Share. Nothing is posted automatically. Party percentages are a game-night joke based on the deck's editorial classifications, not a personality assessment.
+
+To remove data saved by the game, clear its app/browser storage or uninstall it. Leave a party to remove its saved session; room data expires as described above. Google and the stores retain SDK or transaction data according to their own policies. Email the contact above for privacy questions; avoid sending payment details or sensitive information.
+
+The policy is bundled in the app for offline access and published at [https://fireboyd10.github.io/redflagrush/privacy.html](https://fireboyd10.github.io/redflagrush/privacy.html). Changes to data practices will be reflected here and in the applicable store disclosures.

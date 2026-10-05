@@ -67,6 +67,12 @@ self.addEventListener('fetch', (event) => {
   // Room state and private votes always go to the live party server.
   if (url.pathname.startsWith('/api/')) return;
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || !url.href.startsWith(SCOPE)) return;
+  // The bundled policy is a separate document, including when opened in an iframe.
+  // It must not receive the game shell used for offline application routes.
+  if (url.pathname === new URL('privacy.html', SCOPE).pathname) {
+    event.respondWith(assetResponse(event.request));
+    return;
+  }
   if (event.request.mode === 'navigate') {
     // Keep HTML and its hashed assets on one release, even when online.
     event.respondWith(navigationResponse());

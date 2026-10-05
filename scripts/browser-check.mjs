@@ -113,6 +113,16 @@ try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
   const network = monitor(context, base.origin, 'main');
   const page = await timedPage(context);
+  await check('Privacy policy opens from the footer with contact and data disclosures', async () => {
+    await page.locator('[data-action="privacy"]').click();
+    const policy = page.frameLocator('iframe[title="Red Flag Rush privacy policy"]');
+    await policy.locator('h1').waitFor();
+    assert.match(await policy.locator('body').textContent(), /anc\.darius@gmail\.com/);
+    assert.match(await policy.locator('body').textContent(), /User Messaging Platform/);
+    await shot(page, 'privacy-policy-390x844');
+    await page.locator('[data-action="close-privacy"]').click();
+    await visible(page, '#home');
+  });
   await check('First launch, tutorial, and start', async () => {
     await visible(page, '#home-title');
     await page.locator('[data-action="start"]').click();
@@ -302,6 +312,11 @@ try {
     await page.goto(new URL('offline-check/deep', base).href, { waitUntil: 'load' });
     await visible(page, '#home');
     assert.equal(await page.evaluate(() => document.baseURI), base.href);
+    await page.locator('[data-action="privacy"]').click();
+    const policy = page.frameLocator('iframe[title="Red Flag Rush privacy policy"]');
+    await policy.locator('h1').waitFor();
+    assert.match(await policy.locator('body').textContent(), /anc\.darius@gmail\.com/);
+    await page.locator('[data-action="close-privacy"]').click();
     await page.locator('[data-action="start"]').click();
     const answer = await answerFor(page);
     await page.locator(`[data-action="${answer}"]`).click();

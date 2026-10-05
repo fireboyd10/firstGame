@@ -71,6 +71,8 @@ try {
       assert(room.serverNow < room.deadline, 'Final vote should arrive before the timer expires');
     }
     await third.locator('[data-party-action="green"]').click();
+    // A click starts an asynchronous vote request. Wait for its result before asserting server state.
+    await third.locator('#party-reveal').waitFor();
     assert.equal(service.state(code, service.rooms.get(code).players[0].token).phase, 'reveal');
     for (const page of [host, guest, third]) await page.locator('#party-reveal').waitFor();
     assert.match(await host.locator('.party-vote-split').textContent(), /2 Green Flags/);

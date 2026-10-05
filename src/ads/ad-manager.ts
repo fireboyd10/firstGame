@@ -1,10 +1,11 @@
 // Reusable ad system. One interstitial after every 1–2 finished games (solo runs
-// and party matches count alike), shown only at natural breakpoints: leaving the
-// results screen or closing a finished party. Never mid-game. The schedule is
-// persisted, so relaunching the app can never reset or skip it.
+// and party matches count alike), shown only when the game finishes, before the
+// player can replay or navigate. Late ads are skipped. The schedule is
+// persisted, so relaunching the app does not reset the completed-game counter.
 // Everything is a no-op on the web — ads only exist in the native apps.
 import { Capacitor } from '@capacitor/core';
 import { AD_POLICY, adUnitsFor, usingTestAds, type AdPolicy, type AdUnitIds } from './config';
+import { createInterstitialPresenter } from './interstitial-presenter';
 
 /** Subset of @capacitor-community/admob used by the game. Injectable for tests. */
 export interface AdGateway {
@@ -67,6 +68,9 @@ export class AdManager {
   private completedGames: number;
   private nextInterstitialAtGame: number;
   private interstitialReady = false;
+  private loading: Promise<void> | null = null;
+  private loadGeneration = 0;
+  private showing = false;
   private consentAllowsAds = false;
   private testing = false;
   privacyOptionsRequired = false;
@@ -91,6 +95,24 @@ export class AdManager {
   /** Ads only exist in native apps; the web/PWA experience stays ad-free. */
   get adsAvailable(): boolean { return this.gateway !== null; }
 
+  get canShowInterstitial(): boolean {
+    return this.initialized && this.consentAllowsAds && this.interstitialReady && !this.showing
+      && shouldShowInterstitial(this.completedGames, this.nextInterstitialAtGame);
+  }
+
+  private preloadInterstitial(): void {
+    if (!this.gateway || !this.initialized || !this.consentAllowsAds
+      || this.loading || this.interstitialReady || this.showing) return;
+    const generation = this.loadGeneration;
+    const loading = this.gateway.prepareInterstitial({ adId: this.units.interstitial, npa: true })
+      .then(() => {
+        if (generation === this.loadGeneration && this.consentAllowsAds) this.interstitialReady = true;
+      })
+      .catch(() => { /* No fill or offline: skip the ad and keep the game playable. */ })
+      .finally(() => { if (this.loading === loading) this.loading = null; });
+    this.loading = loading;
+  }
+
   async initialize(initializeForTesting: boolean): Promise<boolean> {
     if (!this.gateway) return false;
     if (this.initialized) return this.consentAllowsAds;
@@ -112,6 +134,7 @@ export class AdManager {
       }
       this.consentAllowsAds = true;
       this.initialized = true;
+      this.preloadInterstitial();
       return true;
     } catch {
       this.consentAllowsAds = false;
@@ -123,6 +146,8 @@ export class AdManager {
     if (!this.gateway || !this.privacyOptionsRequired) return false;
     this.consentAllowsAds = false;
     this.interstitialReady = false;
+    this.loadGeneration++;
+    this.loading = null;
     this.initialized = false;
     try {
       await this.gateway.showPrivacyOptionsForm();
@@ -133,29 +158,22 @@ export class AdManager {
     }
   }
 
-  /** Called when any game finishes (solo run or party match). Preloads the ad when one comes due. */
+  /** Count completed games; never wait for a late load at this breakpoint. */
   recordGameCompleted(): void {
     this.completedGames++;
     this.persist();
-    if (this.gateway && this.initialized && this.consentAllowsAds
-      && shouldShowInterstitial(this.completedGames, this.nextInterstitialAtGame)) {
-      this.interstitialReady = false;
-      this.gateway.prepareInterstitial({ adId: this.units.interstitial, npa: true })
-        .then(() => { this.interstitialReady = true; })
-        .catch(() => { this.interstitialReady = false; });
-    }
+    this.preloadInterstitial();
   }
 
   /**
-   * Shows the due interstitial at a natural breakpoint (leaving results / closing a
-   * finished party). Never blocks the transition; resolves false when no ad was shown.
+   * Called once at game completion. Only an already loaded ad can show; a late
+   * load is saved for a future game. Resolves after dismissal or display failure.
    */
   async maybeShowInterstitial(): Promise<boolean> {
-    if (!this.gateway || !this.initialized || !this.consentAllowsAds) return false;
-    if (!shouldShowInterstitial(this.completedGames, this.nextInterstitialAtGame)) return false;
+    if (!this.gateway || !this.canShowInterstitial) return false;
+    this.showing = true;
+    this.interstitialReady = false;
     try {
-      if (!this.interstitialReady) await this.gateway.prepareInterstitial({ adId: this.units.interstitial, npa: true });
-      if (!this.consentAllowsAds) return false;
       await this.gateway.showInterstitial();
       this.nextInterstitialAtGame = nextInterstitialThreshold(this.completedGames, this.policy, this.random);
       this.interstitialReady = false;
@@ -164,6 +182,9 @@ export class AdManager {
     } catch {
       this.interstitialReady = false;
       return false; // A failed ad must never block playing on.
+    } finally {
+      this.showing = false;
+      this.preloadInterstitial();
     }
   }
 }
@@ -174,8 +195,20 @@ export async function createAdManager(policy: AdPolicy = AD_POLICY): Promise<AdM
   const platform = Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
   let gateway: AdGateway | null = null;
   try {
-    const { AdMob } = await import('@capacitor-community/admob');
-    gateway = AdMob;
+    const { AdMob, InterstitialAdPluginEvents } = await import('@capacitor-community/admob');
+    const showInterstitial = await createInterstitialPresenter({
+      onDismiss: (listener) => AdMob.addListener(InterstitialAdPluginEvents.Dismissed, listener),
+      onFailure: (listener) => AdMob.addListener(InterstitialAdPluginEvents.FailedToShow, listener),
+      show: () => AdMob.showInterstitial(),
+    });
+    gateway = {
+      initialize: (options) => AdMob.initialize(options),
+      requestConsentInfo: () => AdMob.requestConsentInfo(),
+      showConsentForm: () => AdMob.showConsentForm(),
+      showPrivacyOptionsForm: () => AdMob.showPrivacyOptionsForm(),
+      prepareInterstitial: (options) => AdMob.prepareInterstitial(options),
+      showInterstitial,
+    };
   } catch { /* Plugin missing (e.g. unsynced build): stay ad-free rather than crash. */ }
   const manager = new AdManager(gateway, adUnitsFor(platform), policy);
   await manager.initialize(usingTestAds(platform));

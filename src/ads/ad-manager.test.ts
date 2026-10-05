@@ -97,6 +97,8 @@ describe('AdManager', () => {
     const manager = new AdManager(gateway, units, AD_POLICY, () => 0); // gap always 1
     await manager.initialize(true);
     for (let game = 1; game <= 4; game++) {
+      // Games take time to play; the next cached ad loads between completion breaks.
+      await new Promise(resolve => setTimeout(resolve, 0));
       manager.recordGameCompleted();
       expect(await manager.maybeShowInterstitial()).toBe(true);
     }
@@ -128,12 +130,66 @@ describe('AdManager', () => {
     expect(await second.maybeShowInterstitial()).toBe(true);
   });
 
-  it('preloads an eligible interstitial as soon as the due game finishes', async () => {
+  it('preloads during play before a game finishes', async () => {
     const gateway = fakeGateway();
     const manager = new AdManager(gateway, units, AD_POLICY, () => 0); // gap 1: due from game 1
     await manager.initialize(true);
-    manager.recordGameCompleted();
     expect(gateway.calls).toContain('prepareInterstitial');
+    expect(manager.canShowInterstitial).toBe(false);
+  });
+
+  it('skips a slow load at completion without duplicating it or showing later', async () => {
+    let loaded!: () => void;
+    const gateway = fakeGateway({ prepareInterstitial: () => {
+      gateway.calls.push('prepareInterstitial');
+      return new Promise<void>(resolve => { loaded = resolve; });
+    } });
+    const manager = new AdManager(gateway, units, AD_POLICY, () => 0);
+    await manager.initialize(true);
+    manager.recordGameCompleted();
+    expect(await manager.maybeShowInterstitial()).toBe(false);
+    expect(gateway.calls.filter(call => call === 'prepareInterstitial')).toHaveLength(1);
+    loaded();
+    await Promise.resolve();
+    expect(gateway.calls).not.toContain('showInterstitial');
+    // A ready ad is eligible only when the caller reaches a future completion break.
+    manager.recordGameCompleted();
+    expect(await manager.maybeShowInterstitial()).toBe(true);
+  });
+
+  it('presents only once while dismissal is pending', async () => {
+    let dismissed!: () => void;
+    const gateway = fakeGateway({ showInterstitial: () => {
+      gateway.calls.push('showInterstitial');
+      return new Promise<void>(resolve => { dismissed = resolve; });
+    } });
+    const manager = new AdManager(gateway, units, AD_POLICY, () => 0);
+    await manager.initialize(true);
+    manager.recordGameCompleted();
+    const showing = manager.maybeShowInterstitial();
+    expect(manager.canShowInterstitial).toBe(false);
+    expect(await manager.maybeShowInterstitial()).toBe(false);
+    expect(gateway.calls.filter(call => call === 'showInterstitial')).toHaveLength(1);
+    dismissed();
+    expect(await showing).toBe(true);
+  });
+
+  it('ignores a pending load after consent is revoked', async () => {
+    let loaded!: () => void;
+    let allowed = true;
+    const gateway = fakeGateway({
+      requestConsentInfo: async () => ({ status: 'OBTAINED', canRequestAds: allowed, privacyOptionsRequirementStatus: 'REQUIRED' }),
+      showPrivacyOptionsForm: async () => { allowed = false; },
+      prepareInterstitial: () => new Promise<void>(resolve => { loaded = resolve; }),
+    });
+    const manager = new AdManager(gateway, units, AD_POLICY, () => 0);
+    await manager.initialize(false);
+    manager.recordGameCompleted();
+    await manager.showPrivacyOptions();
+    loaded();
+    await Promise.resolve();
+    expect(manager.canShowInterstitial).toBe(false);
+    expect(await manager.maybeShowInterstitial()).toBe(false);
   });
 
   it('never blocks the transition when the ad fails', async () => {

@@ -81,7 +81,7 @@ app.innerHTML = `
       </section>
     </main>
     <div class="update-banner" id="update-banner" hidden><span>A fresh version is ready.</span><button data-action="update">Update & reload ${icon('arrow')}</button></div>
-    <footer class="footer"><span>Entertainment and reflection only — not clinical advice.</span><button class="text-button" data-action="ad-privacy" hidden>Ad privacy choices</button><span class="offline-label" id="offline-status">NO ACCOUNTS. JUST INSTINCTS.</span></footer>
+    <footer class="footer"><span>Entertainment and reflection only — not clinical advice.</span><button class="text-button" data-action="privacy">Privacy policy</button><button class="text-button" data-action="ad-privacy" hidden>Ad privacy choices</button><span class="offline-label" id="offline-status">NO ACCOUNTS. JUST INSTINCTS.</span></footer>
     <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
     <dialog id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
     <div class="toast" id="toast" role="status" hidden></div>
@@ -94,19 +94,18 @@ let preferences = loadPreferences();
 let screen: 'home' | 'game' | 'results' = 'home';
 let feedbackRemaining = 0;
 let lastFrame = performance.now();
-let modalKind: 'tutorial' | 'pause' | 'party' | 'shop' | null = null;
+let modalKind: 'tutorial' | 'pause' | 'party' | 'shop' | 'privacy' | null = null;
 let update: (() => void) | null = null;
 let toastTimeout = 0;
 let appActive = true;
+let adBreakActive = false;
 const modal = el<HTMLDialogElement>('#modal');
 const card = el('#scenario-card');
 const party = createPartyUi(el('#modal-content'), {
   onOpen() { modalKind = 'party'; if (!modal.open) modal.showModal(); },
-  // A finished party match is a natural breakpoint, same schedule as solo runs.
-  // A finished party match is a natural breakpoint, same schedule as solo runs.
-  // Ad first, then close — a defensive close can never swallow a due ad.
-  onClose() { void ads?.maybeShowInterstitial(); closeModal(); },
-  onGameFinished() { ads?.recordGameCompleted(); },
+  onClose() { closeModal(); },
+  onGameFinished() { completedGame(modalKind === 'party' && modal.open); },
+  canInteract: () => !adBreakActive,
   purchases: () => purchaseManager,
   onPurchase(packIds) {
     const names = packIds.map((id) => PACKS.find((pack) => pack.packId === id)?.title ?? id).join(', ');
@@ -126,6 +125,24 @@ void createAdManager().then((manager) => {
 let purchaseManager: PurchaseManager = new PurchaseManager(null);
 let purchasesSettled = false;
 const purchasesReady: Promise<void> = createPurchaseManager().then((manager) => { purchaseManager = manager; purchasesSettled = true; });
+
+function completedGame(allowAd = true): void {
+  ads?.recordGameCompleted();
+  if (!allowAd || !ads?.canShowInterstitial || document.hidden || !appActive || adBreakActive) return;
+  adBreakActive = true;
+  app.inert = true;
+  // Modal dialogs escape ancestor inertness; lock the top layer explicitly too.
+  modal.inert = true;
+  sound.setActive(false);
+  void ads.maybeShowInterstitial().finally(() => {
+    adBreakActive = false;
+    app.inert = false;
+    modal.inert = false;
+    sound.setActive(appActive && !document.hidden);
+    lastFrame = performance.now();
+    if (screen === 'results' && !modal.open) el<HTMLButtonElement>('[data-action="replay"]').focus({ preventScroll: true });
+  });
+}
 
 function setScreen(next: typeof screen): void {
   screen = next;
@@ -155,6 +172,22 @@ function toggleSound(): void {
   refreshSound(); sound.unlock();
 }
 function closeModal(): void { if (modalKind === 'party') party.hide(); if (modal.open) modal.close(); modalKind = null; }
+
+function showPrivacy(): void {
+  if (screen === 'game') pause();
+  modalKind = 'privacy';
+  el('#modal-content').innerHTML = `<div class="modal-heading"><span class="eyebrow">YOUR DATA</span><button class="icon-button" data-action="close-privacy" aria-label="Close privacy policy">${icon('cross')}</button></div><h2 id="modal-title">Privacy policy</h2><iframe class="privacy-frame" title="Red Flag Rush privacy policy" src="./privacy.html"></iframe>`;
+  if (!modal.open) modal.showModal();
+}
+
+function closePrivacy(): void {
+  closeModal();
+  if (screen === 'game') {
+    modalKind = 'pause';
+    el('#modal-content').innerHTML = '<h2 id="modal-title">Your game is paused.</h2><button class="primary-button" data-action="resume">BACK TO IT</button>';
+    modal.showModal();
+  }
+}
 
 /** Premium packs shop: non-consumable unlocks through the stores' official billing. */
 function showShop(): void {
@@ -239,7 +272,7 @@ function resume(): void {
   engine.resume();
 }
 function start(): void {
-  if (document.hidden || !appActive) return;
+  if (document.hidden || !appActive || adBreakActive) return;
   closeModal();
   preferences = savePreferences({ tutorialSeen: true });
   sound.stop();
@@ -328,11 +361,10 @@ function finish(): void {
   el('#taste-detail').textContent = `${state.taste.redAccepted} of ${state.taste.redShown} red flags accepted`;
   el('#result-message').textContent = verdict.line;
   el('#share-fallback').hidden = true;
-  // A finished run is the natural breakpoint: count it for the ad schedule.
-  ads?.recordGameCompleted();
   setScreen('results');
   sound.stopCountdown(); sound.play('finish');
   announce(`Your verdict: ${verdict.title}. ${chaos} percent Taste for Chaos and ${green} percent green flag appreciation.`);
+  completedGame();
   el<HTMLButtonElement>('[data-action="replay"]').focus({ preventScroll: true });
 }
 function advanceClock(now: number): void {
@@ -376,6 +408,7 @@ async function share(): Promise<void> {
 }
 
 app.addEventListener('click', (event) => {
+  if (adBreakActive) return;
   const button = (event.target as Element).closest<HTMLElement>('[data-action]');
   if (!button || button.hasAttribute('disabled')) return;
   const action = button.dataset.action;
@@ -383,7 +416,7 @@ app.addEventListener('click', (event) => {
   switch (action) {
     case 'start': preferences.tutorialSeen ? start() : showTutorial(); break;
     case 'begin': case 'restart': start(); break;
-    case 'replay': void ads?.maybeShowInterstitial(); start(); break;
+    case 'replay': start(); break;
     case 'red': case 'green': choose(action); break;
     case 'pause': pause(); break;
     case 'resume': resume(); break;
@@ -392,6 +425,8 @@ app.addEventListener('click', (event) => {
     case 'party-open': party.open(); break;
     case 'shop-open': showShop(); break;
     case 'close-shop': closeModal(); break;
+    case 'privacy': showPrivacy(); break;
+    case 'close-privacy': closePrivacy(); break;
     case 'buy-pack': void shopBuy(button.dataset.product!); break;
     case 'restore-purchases': void shopRestore(); break;
     case 'ad-privacy':
@@ -408,19 +443,22 @@ app.addEventListener('click', (event) => {
       vibrate(preferences.haptics);
       break;
     case 'share': void share(); break;
-    case 'home': if (screen === 'results') void ads?.maybeShowInterstitial(); closeModal(); resetSwipe(); engine.pause(); sound.stop(); setScreen('home'); el<HTMLButtonElement>('[data-action="start"]').focus(); break;
+    case 'home': closeModal(); resetSwipe(); engine.pause(); sound.stop(); setScreen('home'); el<HTMLButtonElement>('[data-action="start"]').focus(); break;
     case 'update': if (screen !== 'game') update?.(); break;
   }
 });
-el('.brand').addEventListener('click', (event) => { event.preventDefault(); if (screen === 'game') pause(); else { closeModal(); setScreen('home'); } });
+el('.brand').addEventListener('click', (event) => { event.preventDefault(); if (adBreakActive) return; if (screen === 'game') pause(); else { closeModal(); setScreen('home'); } });
 modal.addEventListener('cancel', (event) => {
   event.preventDefault();
+  if (adBreakActive) return;
   if (modalKind === 'pause') resume();
   else if (modalKind === 'shop') closeModal();
-  else if (modalKind === 'party') { closeModal(); party.hide(); void ads?.maybeShowInterstitial(); }
+  else if (modalKind === 'privacy') closePrivacy();
+  else if (modalKind === 'party') { closeModal(); party.hide(); }
   else { closeModal(); preferences = savePreferences({ tutorialSeen: true }); }
 });
 document.addEventListener('keydown', (event) => {
+  if (adBreakActive) { event.preventDefault(); return; }
   if (event.repeat || event.altKey || event.ctrlKey || event.metaKey || (event.target as HTMLElement).matches('textarea,input,select')) return;
   if (event.key === 'Escape' && !modal.open && screen === 'game') { event.preventDefault(); pause(); return; }
   if (modal.open) return;
@@ -429,30 +467,31 @@ document.addEventListener('keydown', (event) => {
   } else if ((event.key === ' ' || event.key === 'Enter') && !(event.target as HTMLElement).closest('button,a')) {
     event.preventDefault();
     if (screen === 'home') preferences.tutorialSeen ? start() : showTutorial();
-    else if (screen === 'results') { void ads?.maybeShowInterstitial(); start(); }
+    else if (screen === 'results') start();
   }
 });
-document.addEventListener('visibilitychange', () => { sound.setActive(!document.hidden && appActive); if (document.hidden) pause(); else lastFrame = performance.now(); });
+document.addEventListener('visibilitychange', () => { sound.setActive(!document.hidden && appActive && !adBreakActive); if (document.hidden) pause(); else lastFrame = performance.now(); });
 window.addEventListener('pagehide', () => { sound.setActive(false); if (screen === 'game') pause(); });
-window.addEventListener('pageshow', () => sound.setActive(!document.hidden && appActive));
+window.addEventListener('pageshow', () => sound.setActive(!document.hidden && appActive && !adBreakActive));
 void setupNativeLifecycle({
   onActiveChange(active) {
     if (!active) pause();
     appActive = active;
-    sound.setActive(active && !document.hidden);
+    sound.setActive(active && !document.hidden && !adBreakActive);
     lastFrame = performance.now();
     // Returning to the app leaves the pause menu open until the player resumes.
   },
   onBackButton() {
+    if (adBreakActive) return;
     if (modalKind === 'pause') resume();
     else if (modalKind === 'shop') closeModal();
+    else if (modalKind === 'privacy') closePrivacy();
     else if (modalKind === 'tutorial') {
       closeModal();
       preferences = savePreferences({ tutorialSeen: true });
     } else if (modalKind === 'party') {
       closeModal();
       party.hide();
-      void ads?.maybeShowInterstitial();
     } else if (screen === 'game') pause();
     else if (screen === 'results') {
       setScreen('home');
