@@ -9,24 +9,35 @@ const adb = process.env.ADB || 'adb';
 const devices = (process.env.PARTY_ANDROID_DEVICES || 'emulator-5554,emulator-5556').split(',');
 assert.equal(devices.length, 2, 'Provide two Android devices on the same Wi-Fi.');
 const output = resolve(root, '.qa'); await mkdir(output, { recursive: true });
-const report = { passed: [], errors: [], latencyMs: [], devices };
+const report = { success: false, passed: [], errors: [], latencyMs: [], devices };
 const attachedDevices = [];
 const command = (device, ...args) => execFileSync(adb, ['-s', device, ...args], { encoding: 'utf8', timeout: 20000 }).trim();
+async function bounded(operation, milliseconds, description) {
+  let timer;
+  try {
+    return await Promise.race([operation, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${description} timed out`)), milliseconds);
+    })]);
+  } finally { clearTimeout(timer); }
+}
 
 try {
   const pages = [];
-  const availableDevices = await _android.devices({ omitDriverInstall: true });
+  const availableDevices = await bounded(_android.devices({ omitDriverInstall: true }), 60000, 'Android device discovery');
   for (const [index, device] of devices.entries()) {
+    console.log(`Opening the installed game on ${device}`);
     command(device, 'shell', 'am', 'start', '-n', 'com.fireboydroid.redflagrush/.MainActivity');
     const attached = availableDevices.find(candidate => candidate.serial() === device);
     assert(attached, `Android device ${device} is unavailable.`);
     attachedDevices.push(attached);
     const webView = await attached.webView({ pkg: 'com.fireboydroid.redflagrush' }, { timeout: 60000 });
-    const page = await webView.page();
+    const firstPage = await bounded(webView.page(), 60000, `${device} WebView attachment`);
+    const page = firstPage.context().pages().find(candidate => candidate.url().startsWith('https://localhost/')) ?? firstPage;
     assert(page, 'Native WebView not found. Install the debug build.');
     page.setDefaultTimeout(20000);
     page.on('pageerror', error => report.errors.push(error.message));
-    await page.locator('[data-action="party-open"]').waitFor();
+    await page.locator('[data-action="party-open"]').waitFor({ timeout: 60000 });
+    console.log(`Game menu ready on ${device}`);
     if (!index) {
       await page.locator('[data-action="shop-open"]').click();
       await page.locator('summary').filter({ hasText: 'Review access' }).click();
@@ -129,8 +140,12 @@ try {
   await host.locator('[data-party-action="leave"]').click();
   report.passed.push('Empty rooms release hosting sockets and another room can be created');
   assert.deepEqual(report.errors, []);
+  report.success = true;
   console.log(JSON.stringify(report, null, 2));
+} catch (error) {
+  report.errors.push(error.message);
+  throw error;
 } finally {
   await writeFile(resolve(output, 'phone-party-android-report.json'), JSON.stringify(report, null, 2));
-  for (const device of attachedDevices) await device.close().catch(() => {});
+  for (const device of attachedDevices) await bounded(device.close(), 10000, 'Android debugger cleanup').catch(() => {});
 }
